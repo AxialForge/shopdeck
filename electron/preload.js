@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('shopdeck', {
 
   importInto: (destRel) => ipcRenderer.invoke('module:import', { destRel }),
   createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath }),
+  thumb: (id, version) => ipcRenderer.invoke('module:thumb', { id, version }),
 
   appVersion: () => ipcRenderer.invoke('app:version'),
   update: {

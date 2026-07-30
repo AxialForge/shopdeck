@@ -110,6 +110,48 @@ ipcMain.handle('module:import', async (_e, { destRel } = {}) => {
 
 ipcMain.handle('folder:create', async (_e, { relPath }) => createFolder(await libraryRoot(), relPath))
 
+// ---- Thumbnails -------------------------------------------------------------
+// Render a module in an off-screen window and cache a PNG in .shopdeck/thumbs.
+// Serialized via a queue so we never open many capture windows at once.
+let thumbChain = Promise.resolve()
+function queueThumb(fn) { const p = thumbChain.then(fn, fn); thumbChain = p.catch(() => {}); return p }
+
+function captureModule(indexPath) {
+  return new Promise((resolve) => {
+    const w = new BrowserWindow({
+      x: -4000, y: -4000, width: 1200, height: 800, show: false, skipTaskbar: true, frame: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false }
+    })
+    let settled = false
+    const done = async (ok) => {
+      if (settled) return; settled = true
+      let png = null
+      try { if (ok) { const img = await w.webContents.capturePage(); if (!img.isEmpty()) png = img.resize({ width: 480 }).toPNG() } } catch { /* leave null */ }
+      if (!w.isDestroyed()) w.destroy()
+      resolve(png)
+    }
+    w.webContents.once('did-finish-load', () => setTimeout(() => done(true), 800)) // let charts lay out
+    w.webContents.once('did-fail-load', () => done(false))
+    w.once('ready-to-show', () => w.showInactive()) // off-screen, so it paints without appearing
+    w.loadFile(indexPath).catch(() => done(false))
+    setTimeout(() => done(false), 9000)
+  })
+}
+
+ipcMain.handle('module:thumb', async (_e, { id, version }) => {
+  const root = await libraryRoot()
+  const info = await resolveModuleFile(root, id, version)
+  if (!info) return null
+  const dir = join(root, '.shopdeck', 'thumbs')
+  const out = join(dir, `${id}_v${info.version}.png`)
+  try { return 'data:image/png;base64,' + (await fs.readFile(out)).toString('base64') } catch { /* generate */ }
+  const png = await queueThumb(() => captureModule(info.indexPath))
+  if (!png) return null
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(out, png)
+  return 'data:image/png;base64,' + png.toString('base64')
+})
+
 // ---- Updates (manual only) --------------------------------------------------
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('updater:check', async () => {

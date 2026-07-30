@@ -55,6 +55,7 @@ export default function App() {
   const [activeTags, setActiveTags] = useState(() => new Set())
   const [editing, setEditing] = useState(null)   // module being edited
   const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [thumbs, setThumbs] = useState({})       // id -> data URL ('' = tried, none)
 
   const applyTheme = (t) => { document.documentElement.dataset.theme = t || 'grey' }
 
@@ -68,6 +69,22 @@ export default function App() {
   }, [])
 
   useEffect(() => { reload() }, [reload])
+
+  // Lazily fetch a rendered thumbnail per module (main serializes the work).
+  useEffect(() => {
+    if (!api) return
+    let cancelled = false
+    ;(async () => {
+      for (const m of data.modules) {
+        if (thumbs[m.id] !== undefined) continue
+        const url = await api.thumb(m.id, m.latest)
+        if (cancelled) return
+        setThumbs((prev) => ({ ...prev, [m.id]: url || '' }))
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.modules])
 
   const tree = useMemo(() => buildTree(data.folders), [data.folders])
   const countIn = useCallback(
@@ -185,9 +202,11 @@ export default function App() {
                           </div>
                           <Badge label={`v${m.latest}`} variant="neutral" />
                         </div>
-                        <div className="spark">
-                          {sparkHeights(m.fields?.events || m.id.length).map((h, i) => <span key={i} style={{ height: h + '%' }} />)}
-                        </div>
+                        {thumbs[m.id]
+                          ? <img className="thumb" src={thumbs[m.id]} alt="" />
+                          : <div className="spark">
+                              {sparkHeights(m.fields?.events || m.id.length).map((h, i) => <span key={i} style={{ height: h + '%' }} />)}
+                            </div>}
                         <div className="card-foot">
                           <span>{(m.fields?.events ?? 0).toLocaleString()} swaps</span>
                           <span className="row-actions">
