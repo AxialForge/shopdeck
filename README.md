@@ -61,9 +61,14 @@ Design principles:
 - **Nested folder organization** — the selected library root's own folder tree is
   the navigation (Main › Sub › Files), mirrored live and editable in-app.
 - **Full-fidelity viewing** — open a module in its own window with all its
-  interactivity (zoom, filter, hover) intact.
+  interactivity (zoom, filter, hover) intact; cards show a real rendered thumbnail.
 - **Version history** — rebuild a module and ShopDeck keeps every past version;
-  history survives even when a newer file is dropped on the share out-of-app.
+  open any of them from the card. History survives even when a newer file is
+  dropped on the share out-of-app.
+- **Read-only mode** — a settings toggle that hides import/edit/new-folder, so
+  shop-floor viewers can't accidentally change a shared library.
+- **Auto-refresh** — when someone adds a module to the folder/share, the library
+  updates without a restart.
 - **Editable metadata** — rename a module or retag it in-app; saved as overrides,
   the source file untouched.
 - **Search &amp; filter** — by part / title / tag, sorted by updated / name / size.
@@ -204,10 +209,7 @@ reads). Details in [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Roadmap
 
-- Viewer/editor modes (protect a shared library from accidental edits).
-- Auto-refresh when files change on the share.
-- Version compare (side-by-side v1 vs v2).
-- Real module thumbnails on cards.
+- Side-by-side version compare (opening any past version is already supported).
 - Library backup/export.
 - Optional xlsx→HTML generator for the timeline module type.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Read-only vs editing mode (Settings → Mode) — read-only hides import, new folder,
+  and per-card edit for shop-floor viewers on a shared library.
+- Per-card version history — a version row to open any past version.
+- Real rendered module thumbnails on cards (cached in `.shopdeck/thumbs`).
+- Auto-refresh: the library re-scans when files change on disk / the shared drive.
+
 ## [0.1.0] — 2026-07-29
 ### Added
 - Filesystem-backed library: the selected root folder's nested structure is the

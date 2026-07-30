@@ -74,8 +74,23 @@ ShopDeck mirrors whatever structure is there.
 ## Versions
 
 Every time a module is rebuilt with a higher `version`, ShopDeck keeps the old one.
-The card shows the latest version badge. (An in-window version picker and
-side-by-side compare are on the roadmap; today, opening shows the latest.)
+The card shows the latest version badge, and — when there's more than one version —
+a **version row** (`v3 v2 v1`); click any of them to open that specific version.
+Clicking the card itself opens the latest. (Side-by-side compare is on the roadmap.)
+
+## Read-only vs editing mode
+
+**Settings → Mode:** switch to **Read-only** to hide Import, New folder, and the
+per-card Edit — ideal for shop-floor viewers on a shared library who should browse
+and open, not change things. **Editing** restores the full controls. Viewing
+versions and opening modules works in both modes.
+
+## Auto-refresh
+
+When a module is added to (or changed in) the library folder — including by a
+coworker on the shared drive — ShopDeck notices and updates the view without a
+restart. (On some network shares that don't emit change events, reopen or switch
+folders to force a re-scan.)
 
 ## Themes
 
@@ -95,6 +110,7 @@ its own — only when you click.
 
 | Setting | What it does |
 |---------|--------------|
+| **Mode** | Editing or Read-only (hides import/edit/new-folder). |
 | **Library folder** | Where your library lives — a local folder or a network share. Change or open it here. |
 | **Theme** | Light / Grey / Black. |
 | **Updates** | Manual check / download / install; shows the current version. |
