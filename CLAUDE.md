@@ -36,11 +36,25 @@ npm run preview   # run the built app
 |------|------|
 | `electron/main.js` | Electron main process: window, IPC handlers, opens module windows. |
 | `electron/preload.js` | `contextBridge` — exposes `window.shopdeck` (list/open/import/showSource/libraryDir). Only surface the renderer can touch. |
-| `electron/library.js` | **Pure-Node** storage layer (no Electron import) — manifest parse/validate, import+versioning, catalog listing. Shared by main and the seed script. |
-| `src/renderer/` | React + Astryx UI (the chrome). `App.jsx` is the library view. |
-| `scripts/seed.mjs` | One-shot importer from the timelines folder. |
+| `electron/library.js` | **Pure-Node** storage layer (no Electron import) — manifest parse/validate, `scanLibrary`, `resolveModuleFile`, `setOverride`, `importFiles`, `createFolder`. Shared by main and seed. |
+| `src/renderer/` | React + Astryx UI (the chrome). `App.jsx` = library view + settings + edit/new-folder modals. |
+| `scripts/seed.mjs` | Copies the sample timelines into the default root under `Tooling/Timelines`. |
 | `electron.vite.config.mjs` | electron-vite config; wires the `electron/` + `src/renderer/` layout. |
-| `library/` | On-disk module store (gitignored). `<id>/meta.json` + `<id>/vN/index.html` (+ `source.*`). |
+
+## Storage model (the important part)
+
+**The selected library root's own folder tree IS the organization** — nested
+folders (Main > Sub > Files) are mirrored live as the nav tree; modules are the
+`.html` files inside them. Root defaults to `Documents/ShopDeck Library`, set in
+`userData/settings.json` (`libraryRoot`), repointable to a network share in
+Settings. The app only ever touches inside the root.
+
+A hidden `<root>/.shopdeck/` holds everything the app adds:
+- `index.json` — per-module version list + **title/tag overrides** (editing metadata
+  writes here; **module `.html` files are never modified**).
+- `versions/<id>/vN/` — archived snapshots so history survives even when a newer
+  file is dropped on the share out-of-app. `scanLibrary` snapshots any
+  not-yet-archived manifest `version` on each scan.
 
 Renderer ⇄ main is IPC only (`ipcRenderer.invoke` ↔ `ipcMain.handle`). The
 renderer has a **dev fallback**: with no Electron preload (plain browser at the
@@ -59,6 +73,11 @@ Meta's design system (`@astryxdesign/core` + `@astryxdesign/theme-neutral`, beta
 - CSS: renderer imports `core/reset.css`, `core/astryx.css` (prebuilt — **no
   StyleX/Babel plugin needed**), and `theme-neutral/theme.css`.
 - Theme activates via `data-astryx-theme="neutral"` on `<html>` (see `index.html`).
+- **The 3 AxialForge themes** (light/grey/black) are layered ON TOP via
+  `html[data-theme="…"]` blocks in `app.css`: Astryx's tokens use `light-dark()`,
+  so we just flip `color-scheme` (grey/black = dark, light = light) and override a
+  few tokens (black = darker surfaces) + the royal-blue accent (`--sd-accent`).
+  Theme persists as the `theme` setting; `App` sets `document.documentElement.dataset.theme`.
 - Components used: `Button`, `Badge`, `Token`, `TextInput`, `SegmentedControl`.
   Variants: Button = primary/secondary/ghost/destructive; Badge = neutral/info/
   success/warning/error/…; Token color = default/red/…/gray.
@@ -77,4 +96,11 @@ Meta's design system (`@astryxdesign/core` + `@astryxdesign/theme-neutral`, beta
   reparses `electron/library.js` as ESM. Do **not** add `"type":"module"` to fix
   it: that changes what electron-vite expects for the Electron main output.
 - **Don't reach for a native SQLite driver.** See non-negotiables — it won't
-  compile here. The JSON `meta.json` per module is the index by design.
+  compile here. The `.shopdeck/index.json` is the index by design.
+- **Theme overrides must out-specify Astryx.** Astryx sets its `--color-*` tokens
+  on the same `<html>` element (via `data-astryx-theme`). Our overrides use
+  `html[data-theme="…"]` (specificity 0,1,1) which beats Astryx's attribute
+  selector (0,1,0) — verified `black` bg lands at `#0a0a0b`. If a future override
+  doesn't take, raise specificity; don't reach for `!important` first.
+- **Electron has no `window.prompt`.** New-folder / rename use in-app modals, not
+  `prompt()` (which is disabled in Electron and returns undefined).
