@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] — 2026-07-29
 ### Added
 - Read-only vs editing mode (Settings → Mode) — read-only hides import, new folder,
   and per-card edit for shop-floor viewers on a shared library.
