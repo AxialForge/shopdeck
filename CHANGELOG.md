@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0] — 2026-07-29
 ### Added
 - Filesystem-backed library: the selected root folder's nested structure is the
   organization; modules are the `.html` files within. Hidden `.shopdeck/` index
@@ -12,5 +12,6 @@
   and a tag-triggered GitHub release workflow.
 
 ### Notes
-- First tagged release will publish the installer + `latest.yml` that the updater
-  reads. Add `build/icon.ico` (see `ICON-BRIEF.md`) before the first public build.
+- First public release: CI builds the NSIS installer + portable build and attaches
+  them with `latest.yml` (the feed the manual updater reads) to the GitHub Release.
+- App icon (`build/icon.ico`) is in place.
