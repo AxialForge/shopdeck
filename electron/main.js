@@ -5,7 +5,7 @@ import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder 
 import * as updater from './updater.js'
 
 // ---- Settings (userData/settings.json) --------------------------------------
-const DEFAULTS = { libraryRoot: null, theme: 'grey', showUpdater: true }
+const DEFAULTS = { libraryRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const defaultRoot = () => join(app.getPath('documents'), 'ShopDeck Library')
 

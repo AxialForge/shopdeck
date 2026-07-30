@@ -13,12 +13,19 @@ const SAMPLE = {
     ['40-1428-01', 305, ALL5, false], ['40-1318-01', 147, ALL5, true],
     ['40-1339-01', 291, ['preform', 'finish', 'pierce-strip', 'trim'], true],
     ['40-1462-01', 106, ['finish', 'pierce-strip', 'trim'], true]
-  ].map(([part, events, tags, hasSource]) => ({
-    id: `tool-swap-timeline_${part}`, type: 'tool-swap-timeline', title: `Tool Swap Timeline — ${part}`,
-    tags, description: '', category: 'Tooling', fields: { part, events }, folder: 'Tooling/Timelines',
-    file: `Tooling/Timelines/tool-swap-timeline_${part}.html`, hasSource, latest: 1, currentVersion: 1,
-    versions: [{ version: 1, updated: '2026-07-29', created: '2026-07-29' }], edited: false
-  }))
+  ].map(([part, events, tags, hasSource]) => {
+    const two = part === '40-1328-01' // demo a multi-version module in preview
+    return {
+      id: `tool-swap-timeline_${part}`, type: 'tool-swap-timeline', title: `Tool Swap Timeline — ${part}`,
+      tags, description: '', category: 'Tooling', fields: { part, events }, folder: 'Tooling/Timelines',
+      file: `Tooling/Timelines/tool-swap-timeline_${part}.html`, hasSource,
+      latest: two ? 2 : 1, currentVersion: two ? 2 : 1,
+      versions: two
+        ? [{ version: 1, updated: '2026-06-15' }, { version: 2, updated: '2026-07-29' }]
+        : [{ version: 1, updated: '2026-07-29', created: '2026-07-29' }],
+      edited: false
+    }
+  })
 }
 
 const sparkHeights = (seed) => Array.from({ length: 10 }, (_, i) => 30 + ((seed * 7 + i * 37) % 55))
@@ -38,7 +45,7 @@ function buildTree(folders) {
 }
 
 export default function App() {
-  const [settings, setSettings] = useState({ theme: 'grey', libraryRoot: '' })
+  const [settings, setSettings] = useState({ theme: 'grey', libraryRoot: '', mode: 'editing' })
   const [data, setData] = useState({ root: '', folders: [], modules: [] })
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('library') // 'library' | 'settings'
@@ -53,7 +60,7 @@ export default function App() {
 
   const reload = useCallback(async () => {
     setLoading(true)
-    const s = api ? await api.getSettings() : { theme: 'grey', libraryRoot: SAMPLE.root }
+    const s = api ? await api.getSettings() : { theme: 'grey', libraryRoot: SAMPLE.root, mode: 'editing' }
     applyTheme(s.theme)
     setSettings(s)
     setData(api ? await api.scan() : SAMPLE)
@@ -104,6 +111,8 @@ export default function App() {
     await api.createFolder(folder ? `${folder}/${name}` : name); reload()
   }
 
+  async function onChangeMode(m) { setSettings((s) => ({ ...s, mode: m })); if (api) await api.setSettings({ mode: m }) }
+  const canEdit = settings.mode !== 'readonly'
   const crumbs = folder ? folder.split('/') : []
 
   return (
@@ -117,7 +126,7 @@ export default function App() {
 
       {view === 'settings'
         ? <SettingsView settings={settings} root={data.root} onChangeTheme={onChangeTheme}
-            onChangeRoot={onChangeRoot} onReveal={() => api?.revealRoot()} hasApi={!!api} />
+            onChangeMode={onChangeMode} onChangeRoot={onChangeRoot} onReveal={() => api?.revealRoot()} hasApi={!!api} />
         : (
           <>
             <div className="toolbar">
@@ -130,8 +139,8 @@ export default function App() {
                 <SegmentedControlItem value="title" label="Name" />
                 <SegmentedControlItem value="swaps" label="Swaps" />
               </SegmentedControl>
-              <Button label="New folder" variant="secondary" onClick={() => setNewFolderOpen(true)} />
-              <Button label="Import" variant="primary" onClick={onImport} />
+              {canEdit && <Button label="New folder" variant="secondary" onClick={() => setNewFolderOpen(true)} />}
+              {canEdit && <Button label="Import" variant="primary" onClick={onImport} />}
             </div>
 
             <div className="main">
@@ -182,11 +191,21 @@ export default function App() {
                         <div className="card-foot">
                           <span>{(m.fields?.events ?? 0).toLocaleString()} swaps</span>
                           <span className="row-actions">
-                            <button className="linkbtn" onClick={(e) => { e.stopPropagation(); setEditing(m) }}>Edit</button>
+                            {canEdit && <button className="linkbtn" onClick={(e) => { e.stopPropagation(); setEditing(m) }}>Edit</button>}
                             {m.hasSource && <button className="linkbtn" onClick={(e) => { e.stopPropagation(); api?.showSource(m.id) }}>Source</button>}
                           </span>
                         </div>
                         <div className="tags">{(m.tags || []).slice(0, 4).map((t) => <Token key={t} label={t} color="default" size="sm" />)}</div>
+                        {m.versions.length > 1 && (
+                          <div className="vhist" onClick={(e) => e.stopPropagation()}>
+                            <span className="vhist-label">Versions</span>
+                            {m.versions.slice().reverse().map((v) => (
+                              <button key={v.version} className={'vchip' + (v.version === m.latest ? ' cur' : '')}
+                                title={`Open v${v.version}${v.updated ? ' · ' + v.updated : ''}`}
+                                onClick={() => api?.open(m.id, v.version, m.title)}>v{v.version}</button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -264,10 +283,21 @@ function NameModal({ title, placeholder, note, onCancel, onSave }) {
   )
 }
 
-function SettingsView({ settings, root, onChangeTheme, onChangeRoot, onReveal, hasApi }) {
+function SettingsView({ settings, root, onChangeTheme, onChangeMode, onChangeRoot, onReveal, hasApi }) {
   return (
     <div className="settings">
       <h2>Settings</h2>
+
+      <section className="set-sec">
+        <div className="set-title">Mode</div>
+        <div className="muted small">Read-only hides import, new folder, and editing — for shop-floor viewers on a shared library.</div>
+        <div style={{ marginTop: 8 }}>
+          <SegmentedControl value={settings.mode || 'editing'} onChange={onChangeMode}>
+            <SegmentedControlItem value="editing" label="Editing" />
+            <SegmentedControlItem value="readonly" label="Read-only" />
+          </SegmentedControl>
+        </div>
+      </section>
 
       <section className="set-sec">
         <div className="set-title">Library folder</div>
