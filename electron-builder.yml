@@ -20,7 +20,7 @@ win:
   target:
     - nsis        # updatable installer
     - portable    # portable build (updater is a no-op there)
-  # icon: build/icon.ico   # add once the .ico exists — see ICON-BRIEF.md
+  icon: build/icon.ico
 
 # Artifact names MUST be space-free, or the on-disk file, latest.yml, and the
 # GitHub asset disagree and the updater 404s.
