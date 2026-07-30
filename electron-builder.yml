@@ -1,0 +1,37 @@
+appId: com.axialforge.shopdeck
+productName: ShopDeck
+
+directories:
+  output: dist
+  buildResources: build
+
+# electron-vite emits the app into out/; package that (plus package.json).
+files:
+  - out/**/*
+  - package.json
+
+# Update feed: electron-updater reads latest.yml from this repo's Releases.
+publish:
+  provider: github
+  owner: AxialForge
+  repo: shopdeck
+
+win:
+  target:
+    - nsis        # updatable installer
+    - portable    # portable build (updater is a no-op there)
+  # icon: build/icon.ico   # add once the .ico exists — see ICON-BRIEF.md
+
+# Artifact names MUST be space-free, or the on-disk file, latest.yml, and the
+# GitHub asset disagree and the updater 404s.
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ShopDeck
+
+portable:
+  artifactName: ${name}-${version}-portable.${ext}

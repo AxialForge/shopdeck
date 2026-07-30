@@ -13,5 +13,17 @@ contextBridge.exposeInMainWorld('shopdeck', {
   setMeta: (id, patch) => ipcRenderer.invoke('module:setMeta', { id, ...patch }),
 
   importInto: (destRel) => ipcRenderer.invoke('module:import', { destRel }),
-  createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath })
+  createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath }),
+
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  update: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onStatus: (cb) => {
+      const fn = (_e, s) => cb(s)
+      ipcRenderer.on('updater:status', fn)
+      return () => ipcRenderer.removeListener('updater:status', fn)
+    }
+  }
 })

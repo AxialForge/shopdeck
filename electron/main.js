@@ -2,9 +2,10 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join, basename } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder } from './library.js'
+import * as updater from './updater.js'
 
 // ---- Settings (userData/settings.json) --------------------------------------
-const DEFAULTS = { libraryRoot: null, theme: 'grey' }
+const DEFAULTS = { libraryRoot: null, theme: 'grey', showUpdater: true }
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const defaultRoot = () => join(app.getPath('documents'), 'ShopDeck Library')
 
@@ -109,9 +110,21 @@ ipcMain.handle('module:import', async (_e, { destRel } = {}) => {
 
 ipcMain.handle('folder:create', async (_e, { relPath }) => createFolder(await libraryRoot(), relPath))
 
+// ---- Updates (manual only) --------------------------------------------------
+ipcMain.handle('app:version', () => app.getVersion())
+ipcMain.handle('updater:check', async () => {
+  const s = await loadSettings()
+  const gate = updater.updatesAllowed({ env: process.env, showUpdater: s.showUpdater })
+  if (!gate.enabled) return { ok: false, error: 'disabled' }
+  return updater.check()
+})
+ipcMain.handle('updater:download', () => updater.download())
+ipcMain.handle('updater:install', () => updater.install())
+
 // ---- Lifecycle --------------------------------------------------------------
 app.whenReady().then(() => {
   createMainWindow()
+  updater.onStatus((s) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updater:status', s) })
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow() })
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

@@ -288,6 +288,43 @@ function SettingsView({ settings, root, onChangeTheme, onChangeRoot, onReveal, h
           <SegmentedControlItem value="black" label="Black" />
         </SegmentedControl>
       </section>
+
+      <UpdatesSection hasApi={hasApi} />
     </div>
+  )
+}
+
+function UpdatesSection({ hasApi }) {
+  const [version, setVersion] = useState('')
+  const [status, setStatus] = useState({ state: 'idle' })
+
+  useEffect(() => {
+    if (!hasApi) return
+    window.shopdeck.appVersion().then(setVersion)
+    return window.shopdeck.update.onStatus(setStatus)
+  }, [hasApi])
+
+  const label = {
+    idle: '', checking: 'Checking…', current: "You're up to date.",
+    available: `Update available: v${status.version}`,
+    downloading: `Downloading… ${status.percent || 0}%`,
+    downloaded: `v${status.version} ready to install`, error: status.message
+  }[status.state] || ''
+
+  return (
+    <section className="set-sec">
+      <div className="set-title">Updates</div>
+      <div className="muted small">Manual only — nothing is checked or downloaded until you click. {version && `Current version v${version}.`}</div>
+      <div className="set-actions">
+        {status.state !== 'available' && status.state !== 'downloaded' &&
+          <Button label="Check for updates" variant="secondary" onClick={() => window.shopdeck?.update.check()} />}
+        {status.state === 'available' &&
+          <Button label="Download" variant="primary" onClick={() => window.shopdeck?.update.download()} />}
+        {status.state === 'downloaded' &&
+          <Button label="Restart & install" variant="primary" onClick={() => window.shopdeck?.update.install()} />}
+      </div>
+      {label && <div className={'small ' + (status.state === 'error' ? 'err' : 'muted')} style={{ marginTop: 8 }}>{label}</div>}
+      {!hasApi && <div className="muted small">(Updates run in the installed app only.)</div>}
+    </section>
   )
 }

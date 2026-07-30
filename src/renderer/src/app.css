@@ -22,6 +22,7 @@ body {
 .grow { min-width: 0; }
 .muted { color: var(--color-text-secondary); font-size: 12px; }
 .small { font-size: 12px; }
+.err { color: var(--color-text-red, #e0736c); }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .topbar {
