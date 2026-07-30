@@ -1,0 +1,80 @@
+# ShopDeck
+
+A desktop **library for interactive work-item modules**. A "module" is one
+self-contained HTML file (inline CSS/JS/data) carrying a `module-manifest` JSON
+block; ShopDeck stores, organizes, searches, version-tracks, and opens them at
+full fidelity. The first module type is tool-swap timelines (forged-part die-set
+removal history), but the wrapper is domain-neutral — checklists, reports, and
+other work items plug in the same way. Single-user desktop now; the library is
+plain files so a shared/network deployment is a later config change.
+
+## Non-negotiables
+
+- **No native Node modules.** This Windows box can't compile native addons
+  (Node 24 → ClangCL toolset missing). No `better-sqlite3`, no `node-gyp`
+  packages. Storage is plain files + a JSON index; the whole stack is pure JS.
+- **Modules stay untouched.** ShopDeck displays a module's HTML byte-for-byte in
+  its own window. Astryx/React dress only the wrapper chrome, never the module.
+- **The manifest is the contract.** ShopDeck reads only the embedded
+  `module-manifest` block. See `MODULE-SPEC.md` in the sibling
+  `Part timeline plus timeline` project for the authoritative field reference.
+- Git identity is **AxialForge** (global). Check `git config --local --get-regexp '^user\.'`
+  before the first commit — a stale local override has mis-attributed commits before.
+
+## Commands
+
+```bash
+npm run seed      # import the 7 existing timelines into ./library (dev bootstrap)
+npm run dev       # electron-vite: Vite dev server + Electron window, HMR
+npm run build     # compile main / preload / renderer into out/
+npm run preview   # run the built app
+```
+
+## Architecture
+
+| Path | Role |
+|------|------|
+| `electron/main.js` | Electron main process: window, IPC handlers, opens module windows. |
+| `electron/preload.js` | `contextBridge` — exposes `window.shopdeck` (list/open/import/showSource/libraryDir). Only surface the renderer can touch. |
+| `electron/library.js` | **Pure-Node** storage layer (no Electron import) — manifest parse/validate, import+versioning, catalog listing. Shared by main and the seed script. |
+| `src/renderer/` | React + Astryx UI (the chrome). `App.jsx` is the library view. |
+| `scripts/seed.mjs` | One-shot importer from the timelines folder. |
+| `electron.vite.config.mjs` | electron-vite config; wires the `electron/` + `src/renderer/` layout. |
+| `library/` | On-disk module store (gitignored). `<id>/meta.json` + `<id>/vN/index.html` (+ `source.*`). |
+
+Renderer ⇄ main is IPC only (`ipcRenderer.invoke` ↔ `ipcMain.handle`). The
+renderer has a **dev fallback**: with no Electron preload (plain browser at the
+Vite URL) it shows sample data, so the UI can be built/inspected in a browser.
+
+## Core extension point — new module types
+
+Any self-contained HTML with a valid `module-manifest` works. Pick a new `type`
+slug and set `id = <type>_<key>`; put type-specific searchable data under
+`fields`. No wrapper code changes needed to *store/list/open* a new type. (A
+type-aware generator or custom viewer is a later, optional plug-in.)
+
+## Astryx (UI)
+
+Meta's design system (`@astryxdesign/core` + `@astryxdesign/theme-neutral`, beta).
+- CSS: renderer imports `core/reset.css`, `core/astryx.css` (prebuilt — **no
+  StyleX/Babel plugin needed**), and `theme-neutral/theme.css`.
+- Theme activates via `data-astryx-theme="neutral"` on `<html>` (see `index.html`).
+- Components used: `Button`, `Badge`, `Token`, `TextInput`, `SegmentedControl`.
+  Variants: Button = primary/secondary/ghost/destructive; Badge = neutral/info/
+  success/warning/error/…; Token color = default/red/…/gray.
+
+## Gotchas
+
+- **`Error: Electron uninstall` on `npm run dev`.** The Electron binary never
+  downloaded because this box **blocks package install scripts** (an
+  allow-scripts guard; you'll also see it warn about `@astryxdesign/core`'s
+  postinstall). Fix: `node node_modules/electron/install.js` to fetch the binary.
+  The Astryx postinstall is *only* an `astryx init` nudge — safe to skip.
+- **`npm install` peer conflict: plugin-react wants Vite 8.** Latest
+  `@vitejs/plugin-react` (6.x) peers `vite@^8`, but `electron-vite@5` caps at
+  Vite 7. Pin `@vitejs/plugin-react@^5.1.4` (peers Vite 4–7) with `vite@^7`.
+- **Node warns `MODULE_TYPELESS_PACKAGE_JSON`** running the seed. Harmless — Node
+  reparses `electron/library.js` as ESM. Do **not** add `"type":"module"` to fix
+  it: that changes what electron-vite expects for the Electron main output.
+- **Don't reach for a native SQLite driver.** See non-negotiables — it won't
+  compile here. The JSON `meta.json` per module is the index by design.
