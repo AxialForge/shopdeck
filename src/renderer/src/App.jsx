@@ -76,15 +76,22 @@ export default function App() {
     let cancelled = false
     ;(async () => {
       for (const m of data.modules) {
-        if (thumbs[m.id] !== undefined) continue
+        const key = `${m.id}_${m.latest}`
+        if (thumbs[key] !== undefined) continue
         const url = await api.thumb(m.id, m.latest)
         if (cancelled) return
-        setThumbs((prev) => ({ ...prev, [m.id]: url || '' }))
+        setThumbs((prev) => ({ ...prev, [key]: url || '' }))
       }
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.modules])
+
+  // Auto-refresh when the library folder changes on disk (silent re-scan).
+  useEffect(() => {
+    if (!api) return
+    return api.onLibraryChanged(async () => { setData(await api.scan()) })
+  }, [])
 
   const tree = useMemo(() => buildTree(data.folders), [data.folders])
   const countIn = useCallback(
@@ -202,8 +209,8 @@ export default function App() {
                           </div>
                           <Badge label={`v${m.latest}`} variant="neutral" />
                         </div>
-                        {thumbs[m.id]
-                          ? <img className="thumb" src={thumbs[m.id]} alt="" />
+                        {thumbs[`${m.id}_${m.latest}`]
+                          ? <img className="thumb" src={thumbs[`${m.id}_${m.latest}`]} alt="" />
                           : <div className="spark">
                               {sparkHeights(m.fields?.events || m.id.length).map((h, i) => <span key={i} style={{ height: h + '%' }} />)}
                             </div>}

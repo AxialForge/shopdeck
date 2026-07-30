@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join, basename } from 'node:path'
-import { promises as fs } from 'node:fs'
+import { promises as fs, watch } from 'node:fs'
 import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder } from './library.js'
 import * as updater from './updater.js'
 
@@ -29,6 +29,28 @@ async function libraryRoot() {
 // ---- Windows ----------------------------------------------------------------
 let mainWindow = null
 const moduleWindows = new Set()
+
+// ---- Library watcher (auto-refresh) -----------------------------------------
+// Watch the root and nudge the renderer to re-scan when files change (e.g. a
+// coworker drops a module on the shared drive). Ignores our own .shopdeck writes.
+let watcher = null
+let notifyTimer = null
+function scheduleNotify() {
+  clearTimeout(notifyTimer)
+  notifyTimer = setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('library:changed')
+  }, 500)
+}
+async function startWatch() {
+  if (watcher) { try { watcher.close() } catch { /* ignore */ } watcher = null }
+  const root = await libraryRoot()
+  try {
+    watcher = watch(root, { recursive: true }, (_evt, file) => {
+      if (file && String(file).includes('.shopdeck')) return // our own metadata
+      scheduleNotify()
+    })
+  } catch { /* some network shares don't emit events; degrade quietly */ }
+}
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -71,6 +93,7 @@ ipcMain.handle('library:chooseRoot', async () => {
   if (res.canceled || !res.filePaths[0]) return { canceled: true }
   const root = res.filePaths[0]
   await saveSettings({ libraryRoot: root })
+  startWatch()
   return { canceled: false, root, ...(await scanLibrary(root)) }
 })
 
@@ -166,6 +189,7 @@ ipcMain.handle('updater:install', () => updater.install())
 // ---- Lifecycle --------------------------------------------------------------
 app.whenReady().then(() => {
   createMainWindow()
+  startWatch()
   updater.onStatus((s) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updater:status', s) })
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow() })
 })

@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('shopdeck', {
   importInto: (destRel) => ipcRenderer.invoke('module:import', { destRel }),
   createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath }),
   thumb: (id, version) => ipcRenderer.invoke('module:thumb', { id, version }),
+  onLibraryChanged: (cb) => {
+    const fn = () => cb()
+    ipcRenderer.on('library:changed', fn)
+    return () => ipcRenderer.removeListener('library:changed', fn)
+  },
 
   appVersion: () => ipcRenderer.invoke('app:version'),
   update: {
