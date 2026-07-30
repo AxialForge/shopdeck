@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Desktop library for storing, organizing, presenting, and version-tracking interactive work-item modules.",
   "author": "AxialForge <37514365+AxialForge@users.noreply.github.com>",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {

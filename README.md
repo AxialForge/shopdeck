@@ -8,6 +8,7 @@ everyone gets the same organized, searchable library.
 [![release](https://github.com/AxialForge/shopdeck/actions/workflows/release.yml/badge.svg)](https://github.com/AxialForge/shopdeck/actions/workflows/release.yml)
 [![latest release](https://img.shields.io/github/v/release/AxialForge/shopdeck?display_name=tag)](https://github.com/AxialForge/shopdeck/releases/latest)
 ![platform](https://img.shields.io/badge/platform-Windows-blue)
+[![license](https://img.shields.io/github/license/AxialForge/shopdeck)](LICENSE)
 
 The first module type is manufacturing **tool-swap timelines** (forged-part
 die-set removal history), but ShopDeck is content-agnostic: **any** self-contained
@@ -229,6 +230,6 @@ bridge, and match the house commit style.
 
 ## License
 
-Copyright © AxialForge. All rights reserved — this repository does not yet carry an
-open-source license (`package.json` marks it `UNLICENSED`). If you'd like it to be
-reusable, add a `LICENSE` file with your chosen terms.
+Licensed under the **[Apache License 2.0](LICENSE)** — © 2026 AxialForge. You may
+use, modify, and distribute this software under those terms; see [NOTICE](NOTICE)
+for attribution.
