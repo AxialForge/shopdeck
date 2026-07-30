@@ -82,7 +82,7 @@ flowchart TD
   F2 --> M2["part-B.html + part-B.xlsx"]
   R --> H[".shopdeck/ (hidden)"]
   H --> IDX["index.json — versions + title/tag overrides"]
-  H --> V["versions/&lt;id&gt;/vN/ — archived snapshots"]
+  H --> V["versions/{id}/vN/ — archived snapshots"]
 ```
 
 - **Folders = organization.** ShopDeck scans the root and mirrors its folder tree
