@@ -1,46 +1,34 @@
-// Seed the ShopDeck library from the existing tool-swap timeline modules.
-// Run once: npm run seed
+// Seed the default ShopDeck library with the existing timeline modules.
+// Copies them (and their .xlsx sources) into:
+//   <Documents>\ShopDeck Library\Tooling\Timelines\
+// The app scans that root on launch and snapshots versions into .shopdeck.
 import { promises as fs } from 'node:fs'
+import { homedir } from 'node:os'
 import { resolve, join, basename, extname } from 'node:path'
-import { importModule } from '../electron/library.js'
 
-const ROOT = resolve(import.meta.dirname, '..')
-const LIB = join(ROOT, 'library')
-const SRC = resolve(ROOT, '..', 'Part timeline plus timeline', 'Timelines')
-
-async function siblingSource(htmlPath) {
-  const dir = resolve(htmlPath, '..')
-  const base = basename(htmlPath, extname(htmlPath))
-  for (const ext of ['.xlsx', '.xls', '.csv']) {
-    const cand = join(dir, base + ext)
-    try { await fs.access(cand); return cand } catch { /* keep looking */ }
-  }
-  return null
-}
+const ROOT = join(homedir(), 'Documents', 'ShopDeck Library')
+const DEST = join(ROOT, 'Tooling', 'Timelines')
+const SRC = resolve(import.meta.dirname, '..', '..', 'Part timeline plus timeline', 'Timelines')
 
 async function main() {
   let files
-  try {
-    files = (await fs.readdir(SRC)).filter((f) => f.toLowerCase().endsWith('.html'))
-  } catch {
-    console.error(`Source folder not found: ${SRC}`)
-    process.exit(1)
-  }
-  console.log(`Seeding ${files.length} modules from:\n  ${SRC}\ninto:\n  ${LIB}\n`)
+  try { files = (await fs.readdir(SRC)).filter((f) => /\.html?$/i.test(f)) }
+  catch { console.error(`Source not found: ${SRC}`); process.exit(1) }
 
-  let ok = 0
+  await fs.mkdir(DEST, { recursive: true })
+  console.log(`Copying ${files.length} modules into:\n  ${DEST}\n`)
+
+  let n = 0
   for (const f of files) {
-    const htmlPath = join(SRC, f)
-    try {
-      const src = await siblingSource(htmlPath)
-      const { entry, action } = await importModule({ htmlPath, sourcePath: src, libDir: LIB })
-      console.log(`  ${action.padEnd(11)} ${entry.id}  (${entry.fields?.events ?? '?'} events${src ? ', +source' : ''})`)
-      ok++
-    } catch (err) {
-      console.log(`  FAILED      ${f}: ${err.message}`)
+    await fs.copyFile(join(SRC, f), join(DEST, f))
+    const base = basename(f, extname(f))
+    for (const ext of ['.xlsx', '.xls', '.csv']) {
+      const src = join(SRC, base + ext)
+      try { await fs.access(src); await fs.copyFile(src, join(DEST, base + ext)) } catch { /* no source */ }
     }
+    console.log(`  ${f}`)
+    n++
   }
-  console.log(`\nDone. ${ok}/${files.length} modules in the library.`)
+  console.log(`\nDone. ${n} modules seeded. Launch with: npm run dev`)
 }
-
 main()

@@ -1,10 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-// The only surface the renderer (React + Astryx) can touch. No Node, no fs.
 contextBridge.exposeInMainWorld('shopdeck', {
-  list: () => ipcRenderer.invoke('catalog:list'),
-  open: (id, version) => ipcRenderer.invoke('module:open', { id, version }),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+
+  scan: () => ipcRenderer.invoke('library:scan'),
+  chooseRoot: () => ipcRenderer.invoke('library:chooseRoot'),
+  revealRoot: () => ipcRenderer.invoke('library:reveal'),
+
+  open: (id, version, title) => ipcRenderer.invoke('module:open', { id, version, title }),
   showSource: (id, version) => ipcRenderer.invoke('module:source', { id, version }),
-  importModules: () => ipcRenderer.invoke('module:import'),
-  libraryDir: () => ipcRenderer.invoke('catalog:dir')
+  setMeta: (id, patch) => ipcRenderer.invoke('module:setMeta', { id, ...patch }),
+
+  importInto: (destRel) => ipcRenderer.invoke('module:import', { destRel }),
+  createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath })
 })

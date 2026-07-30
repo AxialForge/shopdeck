@@ -1,50 +1,51 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
-import { join, dirname, basename, extname } from 'node:path'
+import { join, basename } from 'node:path'
 import { promises as fs } from 'node:fs'
-import { importModule, listCatalog, getModulePath } from './library.js'
+import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder } from './library.js'
 
-// Library location: alongside the project in dev, in userData when packaged.
-// Override with SHOPDECK_LIBRARY for a shared/network location later.
-function libraryDir() {
-  if (process.env.SHOPDECK_LIBRARY) return process.env.SHOPDECK_LIBRARY
-  const base = app.isPackaged ? app.getPath('userData') : process.cwd()
-  return join(base, 'library')
+// ---- Settings (userData/settings.json) --------------------------------------
+const DEFAULTS = { libraryRoot: null, theme: 'grey' }
+const settingsFile = () => join(app.getPath('userData'), 'settings.json')
+const defaultRoot = () => join(app.getPath('documents'), 'ShopDeck Library')
+
+async function loadSettings() {
+  try { return { ...DEFAULTS, ...JSON.parse(await fs.readFile(settingsFile(), 'utf8')) } }
+  catch { return { ...DEFAULTS } }
+}
+async function saveSettings(patch) {
+  const next = { ...(await loadSettings()), ...patch }
+  await fs.writeFile(settingsFile(), JSON.stringify(next, null, 2), 'utf8')
+  return next
+}
+async function libraryRoot() {
+  const s = await loadSettings()
+  const root = s.libraryRoot || defaultRoot()
+  await fs.mkdir(root, { recursive: true })
+  if (!s.libraryRoot) await saveSettings({ libraryRoot: root }) // persist the resolved default
+  return root
 }
 
+// ---- Windows ----------------------------------------------------------------
 let mainWindow = null
 const moduleWindows = new Set()
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 940,
-    minHeight: 600,
-    title: 'ShopDeck',
-    backgroundColor: '#f4f6f8',
-    show: false,
+    width: 1240, height: 820, minWidth: 960, minHeight: 620,
+    title: 'ShopDeck', backgroundColor: '#1b1b1b', show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+      contextIsolation: true, nodeIntegration: false, sandbox: false
     }
   })
   mainWindow.once('ready-to-show', () => mainWindow.show())
-
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  else mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-// Open a module (a self-contained, trusted local HTML file) in its own window,
-// at full fidelity, with zoom enabled.
 function openModuleWindow({ indexPath, title, version }) {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: 1280, height: 860,
     title: version ? `${title}  ·  v${version}` : title,
     backgroundColor: '#f4f6f8',
     webPreferences: { contextIsolation: true, nodeIntegration: false }
@@ -55,60 +56,62 @@ function openModuleWindow({ indexPath, title, version }) {
   win.on('closed', () => moduleWindows.delete(win))
 }
 
-ipcMain.handle('catalog:dir', () => libraryDir())
+// ---- IPC --------------------------------------------------------------------
+ipcMain.handle('settings:get', () => loadSettings())
+ipcMain.handle('settings:set', (_e, patch) => saveSettings(patch || {}))
 
-ipcMain.handle('catalog:list', async () => {
-  return listCatalog(libraryDir())
+ipcMain.handle('library:scan', async () => scanLibrary(await libraryRoot()))
+
+ipcMain.handle('library:chooseRoot', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose library folder (local or network share)',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (res.canceled || !res.filePaths[0]) return { canceled: true }
+  const root = res.filePaths[0]
+  await saveSettings({ libraryRoot: root })
+  return { canceled: false, root, ...(await scanLibrary(root)) }
 })
 
-ipcMain.handle('module:open', async (_e, { id, version }) => {
-  const info = await getModulePath(libraryDir(), id, version)
+ipcMain.handle('library:reveal', async () => { await shell.openPath(await libraryRoot()); return true })
+
+ipcMain.handle('module:open', async (_e, { id, version, title }) => {
+  const root = await libraryRoot()
+  const info = await resolveModuleFile(root, id, version)
   if (!info) throw new Error(`module not found: ${id}`)
-  openModuleWindow(info)
+  openModuleWindow({ ...info, title: title || id })
   return true
 })
 
 ipcMain.handle('module:source', async (_e, { id, version }) => {
-  const info = await getModulePath(libraryDir(), id, version)
-  if (!info?.sourcePath) return { ok: false, reason: 'no source attached' }
+  const info = await resolveModuleFile(await libraryRoot(), id, version)
+  if (!info?.sourcePath) return { ok: false, reason: 'no source' }
   await shell.showItemInFolder(info.sourcePath)
   return { ok: true }
 })
 
-ipcMain.handle('module:import', async () => {
+ipcMain.handle('module:setMeta', async (_e, { id, title, tags }) => {
+  const patch = {}
+  if (title !== undefined) patch.title = title
+  if (tags !== undefined) patch.tags = tags
+  return setOverride(await libraryRoot(), id, patch)
+})
+
+ipcMain.handle('module:import', async (_e, { destRel } = {}) => {
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Import module',
-    filters: [{ name: 'Module HTML', extensions: ['html', 'htm'] }],
+    title: 'Import module', filters: [{ name: 'Module HTML', extensions: ['html', 'htm'] }],
     properties: ['openFile', 'multiSelections']
   })
   if (res.canceled) return { canceled: true }
-
-  const results = []
-  for (const htmlPath of res.filePaths) {
-    // Auto-attach a sibling source file with the same base name (e.g. the .xlsx).
-    let sourcePath = null
-    const dir = dirname(htmlPath)
-    const base = basename(htmlPath, extname(htmlPath))
-    for (const ext of ['.xlsx', '.xls', '.csv']) {
-      const cand = join(dir, base + ext)
-      try { await fs.access(cand); sourcePath = cand; break } catch { /* none */ }
-    }
-    try {
-      results.push({ ok: true, ...(await importModule({ htmlPath, sourcePath, libDir: libraryDir() })) })
-    } catch (err) {
-      results.push({ ok: false, file: basename(htmlPath), error: String(err.message || err) })
-    }
-  }
+  const results = await importFiles(await libraryRoot(), destRel || '', res.filePaths)
   return { canceled: false, results }
 })
 
+ipcMain.handle('folder:create', async (_e, { relPath }) => createFolder(await libraryRoot(), relPath))
+
+// ---- Lifecycle --------------------------------------------------------------
 app.whenReady().then(() => {
   createMainWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
-  })
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow() })
 })
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

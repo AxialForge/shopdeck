@@ -1,156 +1,193 @@
-// Pure-Node storage layer for ShopDeck. No Electron imports — so both the
-// Electron main process and the standalone seed script can use it.
+// Pure-Node storage layer for ShopDeck. No Electron imports — shared by the
+// Electron main process and the seed script.
 //
-// On-disk layout (see MODULE-SPEC.md in the timelines project):
-//   <libDir>/<id>/meta.json
-//   <libDir>/<id>/v1/index.html   (+ source.<ext> if a source was attached)
-//   <libDir>/<id>/v2/index.html
-//
-// A "module" is one self-contained HTML file carrying an inert
-// <script type="application/json" id="module-manifest"> block.
+// MODEL: the selected library ROOT folder's own nested structure IS the
+// organization. Modules are the .html files sitting in those folders. A hidden
+// <root>/.shopdeck/ folder holds everything the app adds on top:
+//   .shopdeck/index.json         — per-module version list + title/tag overrides
+//   .shopdeck/versions/<id>/vN/  — archived snapshots so history survives edits
+// Module .html files themselves are never modified.
 
 import { promises as fs } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { join, relative, dirname, basename, extname, sep } from 'node:path'
+import { createHash } from 'node:crypto'
 
-const MANIFEST_RE =
-  /<script[^>]*id=["']module-manifest["'][^>]*>([\s\S]*?)<\/script>/i
+const HIDDEN = '.shopdeck'
+const MANIFEST_RE = /<script[^>]*id=["']module-manifest["'][^>]*>([\s\S]*?)<\/script>/i
+const SOURCE_EXTS = ['.xlsx', '.xls', '.csv']
 
-/** Extract and parse the manifest block from module HTML. Returns null if absent/invalid. */
 export function parseManifest(html) {
   const m = html.match(MANIFEST_RE)
   if (!m) return null
-  try {
-    return JSON.parse(m[1].trim())
-  } catch {
-    return null
-  }
+  try { return JSON.parse(m[1].trim()) } catch { return null }
 }
 
 const REQUIRED = ['schema', 'id', 'type', 'title', 'version', 'created', 'updated']
-
-/** Validate a manifest against schema v1. Returns { ok, errors[] }. */
 export function validateManifest(man) {
   const errors = []
   if (!man || typeof man !== 'object') return { ok: false, errors: ['no manifest object'] }
   for (const k of REQUIRED) if (man[k] === undefined) errors.push(`missing required field: ${k}`)
   if (man.schema !== undefined && man.schema !== 1) errors.push(`unsupported schema: ${man.schema}`)
-  if (man.id !== undefined && !/^[a-z0-9][a-z0-9._-]*$/.test(String(man.id)))
-    errors.push(`invalid id: ${man.id}`)
-  if (man.version !== undefined && !(Number.isInteger(man.version) && man.version >= 1))
-    errors.push(`version must be an integer >= 1`)
+  if (man.id !== undefined && !/^[a-z0-9][a-z0-9._-]*$/.test(String(man.id))) errors.push(`invalid id: ${man.id}`)
+  if (man.version !== undefined && !(Number.isInteger(man.version) && man.version >= 1)) errors.push('version must be an integer >= 1')
   return { ok: errors.length === 0, errors }
 }
 
-async function exists(p) {
-  try { await fs.access(p); return true } catch { return false }
+const toPosix = (p) => p.split(sep).join('/')
+const hashOf = (buf) => createHash('sha1').update(buf).digest('hex').slice(0, 16)
+const today = () => new Date().toISOString().slice(0, 10)
+
+async function exists(p) { try { await fs.access(p); return true } catch { return false } }
+
+async function siblingSource(htmlAbs) {
+  const dir = dirname(htmlAbs)
+  const base = basename(htmlAbs, extname(htmlAbs))
+  for (const ext of SOURCE_EXTS) {
+    const cand = join(dir, base + ext)
+    if (await exists(cand)) return cand
+  }
+  return null
 }
 
-async function readMeta(libDir, id) {
-  try {
-    return JSON.parse(await fs.readFile(join(libDir, id, 'meta.json'), 'utf8'))
-  } catch {
-    return null
+async function loadIndex(root) {
+  try { return JSON.parse(await fs.readFile(join(root, HIDDEN, 'index.json'), 'utf8')) }
+  catch { return { version: 1, modules: {} } }
+}
+async function saveIndex(root, idx) {
+  await fs.mkdir(join(root, HIDDEN), { recursive: true })
+  await fs.writeFile(join(root, HIDDEN, 'index.json'), JSON.stringify(idx, null, 2), 'utf8')
+}
+
+// Recursively collect .html files and all sub-folders, skipping the hidden dir.
+async function walk(root) {
+  const htmls = []
+  const folders = []
+  async function rec(dir) {
+    let entries
+    try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (e.name === HIDDEN) continue
+      const full = join(dir, e.name)
+      if (e.isDirectory()) { folders.push(toPosix(relative(root, full))); await rec(full) }
+      else if (e.isFile() && /\.html?$/i.test(e.name)) htmls.push(full)
+    }
   }
+  await rec(root)
+  return { htmls, folders: folders.sort() }
 }
 
 /**
- * Import one module into the library, handling versioning by manifest id+version.
- * @returns { entry, action: 'created' | 'new-version' | 'replaced' }
+ * Scan the library root into UI-ready data. Snapshots any not-yet-archived
+ * module version so history survives (whether the update happened in-app or by
+ * someone dropping a newer file on the shared drive). Applies title/tag overrides.
  */
-export async function importModule({ htmlPath, sourcePath = null, libDir }) {
-  const html = await fs.readFile(htmlPath, 'utf8')
-  const manifest = parseManifest(html)
-  const v = validateManifest(manifest)
-  if (!v.ok) throw new Error(`Invalid module manifest: ${v.errors.join('; ')}`)
+export async function scanLibrary(root) {
+  await fs.mkdir(join(root, HIDDEN), { recursive: true })
+  const idx = await loadIndex(root)
+  idx.modules ||= {}
 
-  const { id, version } = manifest
-  const idDir = join(libDir, id)
-  const verDir = join(idDir, `v${version}`)
-  const priorMeta = await readMeta(libDir, id)
-  const replacing = await exists(verDir)
+  const { htmls, folders } = await walk(root)
+  const modules = []
 
-  await fs.mkdir(verDir, { recursive: true })
-  await fs.writeFile(join(verDir, 'index.html'), html, 'utf8')
+  for (const file of htmls) {
+    let html
+    try { html = await fs.readFile(file, 'utf8') } catch { continue }
+    const man = parseManifest(html)
+    if (!man || !validateManifest(man).ok) continue
 
-  let sourceFile = null
-  if (sourcePath && (await exists(sourcePath))) {
-    sourceFile = `source${extname(sourcePath) || '.dat'}`
-    await fs.copyFile(sourcePath, join(verDir, sourceFile))
+    const id = man.id
+    const relFile = toPosix(relative(root, file))
+    const relFolder = dirname(relFile) === '.' ? '' : dirname(relFile)
+    const srcAbs = await siblingSource(file)
+
+    const rec = (idx.modules[id] ||= { overrides: {}, versions: [] })
+    if (!rec.versions.some((v) => v.version === man.version)) {
+      const vdir = join(root, HIDDEN, 'versions', id, `v${man.version}`)
+      await fs.mkdir(vdir, { recursive: true })
+      await fs.copyFile(file, join(vdir, 'index.html'))
+      let source = null
+      if (srcAbs) { source = 'source' + (extname(srcAbs) || '.dat'); await fs.copyFile(srcAbs, join(vdir, source)) }
+      rec.versions.push({ version: man.version, created: man.created, updated: man.updated, hash: hashOf(html), dir: `v${man.version}`, source, archivedAt: new Date().toISOString() })
+      rec.versions.sort((a, b) => a.version - b.version)
+    }
+    rec.lastPath = relFile
+
+    const latest = Math.max(...rec.versions.map((v) => v.version))
+    modules.push({
+      id,
+      type: man.type,
+      title: rec.overrides.title || man.title,
+      tags: rec.overrides.tags || man.tags || [],
+      manifestTitle: man.title,
+      manifestTags: man.tags || [],
+      description: rec.overrides.description || man.description || '',
+      category: man.category || '',
+      fields: man.fields || {},
+      folder: relFolder,
+      file: relFile,
+      hasSource: !!srcAbs,
+      latest,
+      currentVersion: man.version,
+      versions: rec.versions.map((v) => ({ version: v.version, updated: v.updated, created: v.created, source: v.source })),
+      edited: !!(rec.overrides.title || rec.overrides.tags)
+    })
   }
 
-  const versions = (priorMeta?.versions || []).filter((x) => x.version !== version)
-  versions.push({
-    version,
-    created: manifest.created,
-    updated: manifest.updated,
-    dir: `v${version}`,
-    source: sourceFile,
-    origin: basename(htmlPath)
-  })
-  versions.sort((a, b) => a.version - b.version)
-
-  const latest = versions[versions.length - 1].version
-  const meta = {
-    id,
-    type: manifest.type,
-    title: manifest.title,
-    category: manifest.category || 'Uncategorized',
-    latest,
-    versions,
-    manifest: version >= latest ? manifest : priorMeta?.manifest || manifest
-  }
-  await fs.writeFile(join(idDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8')
-
-  const action = replacing ? 'replaced' : priorMeta ? 'new-version' : 'created'
-  return { entry: toEntry(libDir, meta), action }
+  await saveIndex(root, idx)
+  return { root, folders, modules }
 }
 
-function toEntry(libDir, meta) {
-  const latestVer = meta.versions.find((x) => x.version === meta.latest) || meta.versions.at(-1)
-  const man = meta.manifest || {}
-  return {
-    id: meta.id,
-    type: meta.type,
-    title: meta.title,
-    category: meta.category,
-    description: man.description || '',
-    tags: man.tags || [],
-    fields: man.fields || {},
-    latest: meta.latest,
-    versions: meta.versions,
-    hasSource: !!latestVer?.source,
-    indexPath: join(libDir, meta.id, latestVer.dir, 'index.html'),
-    sourcePath: latestVer?.source ? join(libDir, meta.id, latestVer.dir, latestVer.source) : null
+/** Resolve the on-disk index.html for opening (latest = the live file; older = an archived snapshot). */
+export async function resolveModuleFile(root, id, version) {
+  const idx = await loadIndex(root)
+  const rec = idx.modules?.[id]
+  if (!rec?.versions?.length) return null
+  const latest = Math.max(...rec.versions.map((v) => v.version))
+  if (version && version < latest) {
+    const ver = rec.versions.find((v) => v.version === version)
+    if (!ver) return null
+    const dir = join(root, HIDDEN, 'versions', id, ver.dir)
+    return { indexPath: join(dir, 'index.html'), sourcePath: ver.source ? join(dir, ver.source) : null, version }
   }
+  const live = join(root, rec.lastPath)
+  return { indexPath: live, sourcePath: await siblingSource(live), version: latest }
 }
 
-/** List every module in the library as UI-ready entries, newest-updated first. */
-export async function listCatalog(libDir) {
-  await fs.mkdir(libDir, { recursive: true })
-  const ids = await fs.readdir(libDir, { withFileTypes: true })
-  const out = []
-  for (const d of ids) {
-    if (!d.isDirectory()) continue
-    const meta = await readMeta(libDir, d.name)
-    if (meta) out.push(toEntry(libDir, meta))
+/** Persist app-side title/tag overrides (module files are never touched). */
+export async function setOverride(root, id, patch) {
+  const idx = await loadIndex(root)
+  const rec = idx.modules?.[id]
+  if (!rec) return false
+  rec.overrides = { ...rec.overrides, ...patch }
+  for (const k of Object.keys(rec.overrides)) {
+    const v = rec.overrides[k]
+    if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) delete rec.overrides[k]
   }
-  out.sort((a, b) => {
-    const au = a.versions.at(-1)?.updated || '', bu = b.versions.at(-1)?.updated || ''
-    return bu.localeCompare(au) || a.title.localeCompare(b.title)
-  })
-  return out
+  await saveIndex(root, idx)
+  return true
 }
 
-/** Resolve the on-disk index.html for a specific module version (defaults to latest). */
-export async function getModulePath(libDir, id, version) {
-  const meta = await readMeta(libDir, id)
-  if (!meta) return null
-  const ver = version ? meta.versions.find((x) => x.version === version) : meta.versions.find((x) => x.version === meta.latest)
-  if (!ver) return null
-  return {
-    indexPath: join(libDir, id, ver.dir, 'index.html'),
-    sourcePath: ver.source ? join(libDir, id, ver.dir, ver.source) : null,
-    title: meta.title,
-    version: ver.version
+/** Copy module HTML (+ sibling source) into a folder under the root. */
+export async function importFiles(root, destRel, filePaths) {
+  const destDir = join(root, destRel || '')
+  await fs.mkdir(destDir, { recursive: true })
+  const done = []
+  for (const f of filePaths) {
+    let html
+    try { html = await fs.readFile(f, 'utf8') } catch { done.push({ ok: false, file: basename(f), error: 'unreadable' }); continue }
+    const man = parseManifest(html)
+    if (!man || !validateManifest(man).ok) { done.push({ ok: false, file: basename(f), error: 'invalid or missing manifest' }); continue }
+    await fs.copyFile(f, join(destDir, basename(f)))
+    const src = await siblingSource(f)
+    if (src) await fs.copyFile(src, join(destDir, basename(src)))
+    done.push({ ok: true, file: basename(f), id: man.id })
   }
+  return done
+}
+
+export async function createFolder(root, relPath) {
+  const clean = String(relPath || '').replace(/[.]{2,}/g, '').replace(/^[/\\]+/, '')
+  if (!clean) return false
+  await fs.mkdir(join(root, clean), { recursive: true })
+  return true
 }
