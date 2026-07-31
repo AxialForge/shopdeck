@@ -98,6 +98,62 @@ async function walk(root) {
   return { htmls, folders: folders.sort() }
 }
 
+// ---- Manifest inference (for HTML files WITHOUT an embedded module-manifest) -
+// ShopDeck prefers the embedded module-manifest block, but not every self-contained
+// HTML has one (e.g. timelines exported by the standalone tool). These helpers
+// synthesise a manifest from what's in the file so such files still list and open,
+// side by side with generated modules.
+
+const decodeEntities = (s) => String(s)
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&mdash;/g, '—').replace(/&nbsp;/g, ' ')
+
+// A manifest id from a filename base: lowercase, only [a-z0-9._-], starting with an
+// alphanumeric — matches validateManifest's id rule.
+const slugId = (s) => String(s || '').trim().toLowerCase()
+  .replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').replace(/-+$/g, '')
+
+// Pull the timeline's embedded `const DATA = {…};` object if present. DATA is JSON,
+// so the first `};` after it is its end (JSON literals carry no semicolons).
+function timelineDataOf(html) {
+  const m = html.match(/const\s+DATA\s*=\s*(\{[\s\S]*?\})\s*;/)
+  if (!m) return null
+  let d
+  try { d = JSON.parse(m[1]) } catch { return null }
+  if (!d || !Array.isArray(d.events)) return null
+  const dates = []
+  for (const e of d.events) { if (e && e.removed) dates.push(e.removed); if (e && e.install) dates.push(e.install) }
+  dates.sort()
+  const groups = [...new Set((d.lanes || []).map((l) => String((l && l.group) || '').replace(/^\s*\d+\s*·\s*/, '').trim()).filter(Boolean))]
+  const tags = groups.map((g) => g.toLowerCase().replace(/\s*\/\s*/g, '-').replace(/\s+/g, '-'))
+  return { part: d.part || null, events: d.events.length, dmin: d.dmin || dates[0] || null, dmax: d.dmax || dates[dates.length - 1] || null, tags }
+}
+
+/** Build a best-effort manifest for an HTML file that carries no (valid) manifest. */
+function inferManifest(html, absFile, mtime) {
+  const base = basename(absFile, extname(absFile))
+  const titleTag = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]
+  const title = decodeEntities((titleTag || base).trim()).trim() || base
+  let id = slugId(base)
+  if (!id && !title) return null
+  if (!id) id = 'module'
+  const day = (mtime instanceof Date && !isNaN(mtime.valueOf())) ? mtime.toISOString().slice(0, 10) : today()
+
+  const man = { schema: 1, id, type: 'document', title, version: 1, created: day, updated: day, tags: [], fields: {} }
+
+  // A tool-swap timeline carries its own DATA object — enrich the card from it.
+  const tl = timelineDataOf(html)
+  if (tl) {
+    man.type = 'tool-swap-timeline'
+    man.category = 'Tooling'
+    if (tl.part) { const tid = slugId(`tool-swap-timeline_${tl.part}`); if (tid) man.id = tid }
+    man.tags = tl.tags
+    man.description = tl.part ? `Die-set removal history for part ${tl.part}.` : ''
+    man.fields = { part: tl.part, partFamily: tl.part ? String(tl.part).split('-')[0] : '', events: tl.events, dateRange: { from: tl.dmin, to: tl.dmax } }
+  }
+  return man
+}
+
 /**
  * Scan the library root into UI-ready data. Snapshots any not-yet-archived
  * module version so history survives (whether the update happened in-app or by
@@ -116,10 +172,17 @@ export async function scanLibrary(root) {
     const relFile = toPosix(relative(root, file))
     let html
     try { html = await fs.readFile(file, 'utf8') } catch { skipped.push({ file: relFile, reason: 'could not read the file (an offline OneDrive file?)' }); continue }
-    const man = parseManifest(html)
-    if (!man) { skipped.push({ file: relFile, reason: 'no module-manifest block found' }); continue }
-    const check = validateManifest(man)
-    if (!check.ok) { skipped.push({ file: relFile, reason: check.errors[0] || 'invalid manifest' }); continue }
+    let man = parseManifest(html)
+    let inferred = false
+    if (!man || !validateManifest(man).ok) {
+      // No embedded manifest (or an invalid one): synthesise one from the file so
+      // standalone-tool timelines and other manifest-less work-item HTML still show.
+      let mtime = null
+      try { mtime = (await fs.stat(file)).mtime } catch { /* keep null → today() */ }
+      const guess = inferManifest(html, file, mtime)
+      if (guess && validateManifest(guess).ok) { man = guess; inferred = true }
+      else { skipped.push({ file: relFile, reason: man ? 'invalid module-manifest' : 'no module-manifest and no readable title' }); continue }
+    }
 
     const id = man.id
     const relFolder = dirname(relFile) === '.' ? '' : dirname(relFile)
@@ -159,7 +222,8 @@ export async function scanLibrary(root) {
       latest,
       currentVersion: man.version,
       versions: rec.versions.map((v) => ({ version: v.version, updated: v.updated, created: v.created, source: v.source })),
-      edited: !!(rec.overrides.title || rec.overrides.tags)
+      edited: !!(rec.overrides.title || rec.overrides.tags),
+      inferred
     })
   }
 
@@ -224,12 +288,13 @@ export async function importFiles(root, destRel, filePaths) {
   for (const f of filePaths) {
     let html
     try { html = await fs.readFile(f, 'utf8') } catch { done.push({ ok: false, file: basename(f), error: 'unreadable' }); continue }
+    // A manifest is optional — files without one are inferred on scan — so any
+    // readable self-contained HTML can be imported.
     const man = parseManifest(html)
-    if (!man || !validateManifest(man).ok) { done.push({ ok: false, file: basename(f), error: 'invalid or missing manifest' }); continue }
     await fs.copyFile(f, join(destDir, basename(f)))
     const src = await siblingSource(f)
     if (src) await fs.copyFile(src, join(destDir, basename(src)))
-    done.push({ ok: true, file: basename(f), id: man.id })
+    done.push({ ok: true, file: basename(f), id: man?.id || slugId(basename(f, extname(f))) || null })
   }
   return done
 }
@@ -266,15 +331,14 @@ export async function importTree(root, destRel, srcDir) {
   for (const f of files) {
     let html
     try { html = await fs.readFile(f, 'utf8') } catch { done.push({ ok: false, file: basename(f), error: 'unreadable' }); continue }
-    const man = parseManifest(html)
-    if (!man || !validateManifest(man).ok) { done.push({ ok: false, file: basename(f), error: 'invalid or missing manifest' }); continue }
+    const man = parseManifest(html)                                // optional — inferred on scan when absent
     const rel = toPosix(relative(srcDir, dirname(f)))              // subfolder under the picked dir
     const dest = join(root, destRel || '', rel)
     await fs.mkdir(dest, { recursive: true })
     await fs.copyFile(f, join(dest, basename(f)))
     const src = await siblingSource(f)
     if (src) await fs.copyFile(src, join(dest, basename(src)))
-    done.push({ ok: true, file: basename(f), id: man.id, folder: toPosix(join(destRel || '', rel)) })
+    done.push({ ok: true, file: basename(f), id: man?.id || slugId(basename(f, extname(f))) || null, folder: toPosix(join(destRel || '', rel)) })
   }
   return done
 }

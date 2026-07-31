@@ -85,17 +85,22 @@ test('scanLibrary finds a module whose dirent is a symlink (OneDrive placeholder
   assert.ok(d.htmlCount >= 1)
 })
 
-test('scanLibrary reports htmlCount and skip reasons for files that are not valid modules', async () => {
+test('scanLibrary infers generic modules for manifest-less HTML and reports htmlCount', async () => {
   const root = await tmpRoot()
   await fs.mkdir(join(root, 'X'), { recursive: true })
-  await fs.writeFile(join(root, 'X', 'nomanifest.html'), '<html><body>no manifest</body></html>', 'utf8')
-  await fs.writeFile(join(root, 'X', 'bad.html'), moduleHtml(baseMan({ id: 'BAD ID' })), 'utf8')
+  await fs.writeFile(join(root, 'X', 'notes.html'), '<!doctype html><html><head><title>Notes</title></head><body>no manifest</body></html>', 'utf8')
+  await fs.writeFile(join(root, 'X', 'plain.html'), '<html><body>bare</body></html>', 'utf8')
 
   const d = await scanLibrary(root)
-  assert.equal(d.modules.length, 0)
   assert.equal(d.htmlCount, 2)
-  assert.equal(d.skipped.length, 2)
-  assert.ok(d.skipped.some((s) => /manifest/i.test(s.reason)), 'a missing-manifest reason is reported')
+  const notes = d.modules.find((m) => m.id === 'notes')
+  assert.ok(notes, 'titled manifest-less file is inferred')
+  assert.equal(notes.type, 'document')
+  assert.equal(notes.inferred, true)
+  assert.equal(notes.title, 'Notes')
+  const plain = d.modules.find((m) => m.id === 'plain')
+  assert.ok(plain, 'untitled file is inferred from its filename')
+  assert.equal(plain.title, 'plain')
 })
 
 test('a higher version is snapshotted and kept as history', async () => {
@@ -138,22 +143,51 @@ test('setOverride changes title/tags without modifying the module file', async (
   assert.equal(m2.edited, false)
 })
 
-test('importFiles copies valid modules and rejects ones without a manifest', async () => {
+test('importFiles copies any self-contained HTML; a missing manifest is inferred on scan', async () => {
   const root = await tmpRoot()
   const src = await fs.mkdtemp(join(tmpdir(), 'sd-src-'))
   const good = join(src, 'good.html')
-  const bad = join(src, 'bad.html')
+  const bare = join(src, 'notes.html')
   await fs.writeFile(good, moduleHtml(baseMan({ id: 'imp_1' })), 'utf8')
-  await fs.writeFile(bad, '<html><body>no manifest</body></html>', 'utf8')
+  await fs.writeFile(bare, '<!doctype html><html><head><title>Bare Notes</title></head><body>x</body></html>', 'utf8')
 
-  const res = await importFiles(root, 'Imported', [good, bad])
+  const res = await importFiles(root, 'Imported', [good, bare])
   assert.equal(res.find((r) => r.file === 'good.html').ok, true)
-  assert.equal(res.find((r) => r.file === 'bad.html').ok, false)
+  assert.equal(res.find((r) => r.file === 'notes.html').ok, true)
 
   const d = await scanLibrary(root)
   const m = d.modules.find((x) => x.id === 'imp_1')
-  assert.ok(m, 'imported module is listed')
+  assert.ok(m, 'manifest module is listed')
   assert.equal(m.folder, 'Imported')
+  assert.equal(m.inferred, false)
+
+  const bareMod = d.modules.find((x) => x.id === 'notes')
+  assert.ok(bareMod, 'manifest-less module is listed via inference')
+  assert.equal(bareMod.inferred, true)
+  assert.equal(bareMod.title, 'Bare Notes')
+})
+
+test('scanLibrary infers a tool-swap-timeline manifest from an embedded DATA object', async () => {
+  const root = await tmpRoot()
+  await fs.mkdir(join(root, 'T'), { recursive: true })
+  const DATA = {
+    part: '40-1318-01',
+    lanes: [{ lane: 0, group: '1 · Preform', tool: 'A1', desc: 'TOP' }, { lane: 1, group: '4 · Pierce / Strip', tool: 'A2', desc: 'PP' }],
+    events: [{ lane: 0, tool: 'A1', removed: '2020-01-01', install: '2019-06-01' }, { lane: 1, tool: 'A2', removed: '2021-03-03', install: null }]
+  }
+  const html = `<!doctype html><html><head><title>Tool Swap Timeline — 40-1318-01</title></head><body>\n<script>\nconst DATA = ${JSON.stringify(DATA)};\ndocument.title = 't';\n</script></body></html>`
+  await fs.writeFile(join(root, 'T', 'tool-swap-timeline_40-1318-01.html'), html, 'utf8')
+
+  const d = await scanLibrary(root)
+  const m = d.modules.find((x) => x.id === 'tool-swap-timeline_40-1318-01')
+  assert.ok(m, 'inferred timeline is listed')
+  assert.equal(m.type, 'tool-swap-timeline')
+  assert.equal(m.inferred, true)
+  assert.equal(m.fields.part, '40-1318-01')
+  assert.equal(m.fields.events, 2)
+  assert.deepEqual(m.tags, ['preform', 'pierce-strip'])
+  assert.equal(m.fields.dateRange.from, '2019-06-01')
+  assert.equal(m.fields.dateRange.to, '2021-03-03')
 })
 
 test('importTree copies a folder preserving its subfolder structure', async () => {

@@ -285,7 +285,7 @@ export default function App() {
                     {data.modules.length > 0
                       ? 'Nothing matches your filters.'
                       : data.htmlCount > 0
-                        ? <>Found {data.htmlCount} HTML file{data.htmlCount === 1 ? '' : 's'} here, but {data.htmlCount === 1 ? 'it isn’t a valid module' : 'none are valid modules'} — each needs a <code>module-manifest</code> block.{data.skipped?.[0] ? <><br />First: <code>{data.skipped[0].file}</code> — {data.skipped[0].reason}.</> : ''}</>
+                        ? <>Found {data.htmlCount} HTML file{data.htmlCount === 1 ? '' : 's'} here, but {data.htmlCount === 1 ? 'it' : 'none'} could be loaded.{data.skipped?.[0] ? <><br />First: <code>{data.skipped[0].file}</code> — {data.skipped[0].reason}.</> : ''}</>
                         : 'Library is empty. Click Import to add a module (or run npm run seed).'}
                   </div>
                 )}
@@ -296,7 +296,7 @@ export default function App() {
                         <div className="card-top">
                           <div className="grow">
                             <div className="part">{m.fields?.part || m.title}</div>
-                            <div className="muted">{m.type.replace(/-/g, ' ')}{m.edited ? ' · edited' : ''}</div>
+                            <div className="muted">{m.type.replace(/-/g, ' ')}{m.edited ? ' · edited' : ''}{m.inferred ? ' · no manifest' : ''}</div>
                           </div>
                           <Badge label={`v${m.latest}`} variant="neutral" />
                         </div>
