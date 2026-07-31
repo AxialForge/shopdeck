@@ -67,6 +67,37 @@ test('scanLibrary discovers modules, folders, tags, and creates .shopdeck', asyn
   await fs.access(join(root, '.shopdeck', 'versions', 'a_1', 'v1', 'index.html'))
 })
 
+test('scanLibrary finds a module whose dirent is a symlink (OneDrive placeholder case)', async (t) => {
+  // OneDrive "Files On-Demand" placeholders are reparse points that readdir
+  // reports as symlinks (isFile() === false). A symlink reproduces that exact
+  // dirent classification, which used to make the whole library scan empty.
+  const root = await tmpRoot()
+  const ext = await fs.mkdtemp(join(tmpdir(), 'sd-ext-'))
+  const real = join(ext, 'real.html')
+  await fs.writeFile(real, moduleHtml(baseMan({ id: 'od_1' })), 'utf8')
+  const dir = join(root, 'Sync')
+  await fs.mkdir(dir, { recursive: true })
+  try { await fs.symlink(real, join(dir, 'od.html')) }
+  catch { t.skip('symlinks not permitted in this environment'); return }
+
+  const d = await scanLibrary(root)
+  assert.ok(d.modules.find((m) => m.id === 'od_1'), 'symlinked module is discovered')
+  assert.ok(d.htmlCount >= 1)
+})
+
+test('scanLibrary reports htmlCount and skip reasons for files that are not valid modules', async () => {
+  const root = await tmpRoot()
+  await fs.mkdir(join(root, 'X'), { recursive: true })
+  await fs.writeFile(join(root, 'X', 'nomanifest.html'), '<html><body>no manifest</body></html>', 'utf8')
+  await fs.writeFile(join(root, 'X', 'bad.html'), moduleHtml(baseMan({ id: 'BAD ID' })), 'utf8')
+
+  const d = await scanLibrary(root)
+  assert.equal(d.modules.length, 0)
+  assert.equal(d.htmlCount, 2)
+  assert.equal(d.skipped.length, 2)
+  assert.ok(d.skipped.some((s) => /manifest/i.test(s.reason)), 'a missing-manifest reason is reported')
+})
+
 test('a higher version is snapshotted and kept as history', async () => {
   const root = await tmpRoot()
   await writeModule(root, 'M', 'v1.html', baseMan({ id: 'p_1', version: 1, updated: '2026-01-01' }))

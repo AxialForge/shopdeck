@@ -281,9 +281,13 @@ export default function App() {
 
                 {loading && <div className="empty">Loading…</div>}
                 {!loading && shown.length === 0 && (
-                  <div className="empty">{data.modules.length === 0
-                    ? 'Library is empty. Click Import to add a module (or run npm run seed).'
-                    : 'Nothing matches your filters.'}</div>
+                  <div className="empty">
+                    {data.modules.length > 0
+                      ? 'Nothing matches your filters.'
+                      : data.htmlCount > 0
+                        ? <>Found {data.htmlCount} HTML file{data.htmlCount === 1 ? '' : 's'} here, but {data.htmlCount === 1 ? 'it isn’t a valid module' : 'none are valid modules'} — each needs a <code>module-manifest</code> block.{data.skipped?.[0] ? <><br />First: <code>{data.skipped[0].file}</code> — {data.skipped[0].reason}.</> : ''}</>
+                        : 'Library is empty. Click Import to add a module (or run npm run seed).'}
+                  </div>
                 )}
                 {!loading && shown.length > 0 && (
                   <div className="grid">

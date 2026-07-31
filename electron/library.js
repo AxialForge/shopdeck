@@ -58,18 +58,40 @@ async function saveIndex(root, idx) {
   await fs.writeFile(join(root, HIDDEN, 'index.json'), JSON.stringify(idx, null, 2), 'utf8')
 }
 
+// Classify a directory entry. OneDrive "Files On-Demand" placeholders are reparse
+// points, and fs.readdir(withFileTypes) reports them as symlinks — dirent.isFile()
+// AND isDirectory() are both false — so a naive isFile() check skips every module
+// in a synced folder and the library looks empty even though the files are really
+// there (this bit users whose library lived under OneDrive). Trust the dirent when
+// it's decisive; otherwise stat to resolve the real type. stat reads metadata only
+// — it does NOT download an online-only file.
+async function entryKind(full, dirent) {
+  if (dirent.isDirectory()) return 'dir'
+  if (dirent.isFile()) return 'file'
+  try { return (await fs.stat(full)).isDirectory() ? 'dir' : 'file' }
+  catch { return 'skip' }
+}
+
 // Recursively collect .html files and all sub-folders, skipping the hidden dir.
+// A realpath-keyed `seen` set guards against symlink/junction cycles now that we
+// follow reparse entries.
 async function walk(root) {
   const htmls = []
   const folders = []
+  const seen = new Set()
   async function rec(dir) {
+    let key
+    try { key = await fs.realpath(dir) } catch { key = dir }
+    if (seen.has(key)) return
+    seen.add(key)
     let entries
     try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
     for (const e of entries) {
       if (e.name === HIDDEN) continue
       const full = join(dir, e.name)
-      if (e.isDirectory()) { folders.push(toPosix(relative(root, full))); await rec(full) }
-      else if (e.isFile() && /\.html?$/i.test(e.name)) htmls.push(full)
+      const kind = await entryKind(full, e)
+      if (kind === 'dir') { folders.push(toPosix(relative(root, full))); await rec(full) }
+      else if (kind === 'file' && /\.html?$/i.test(e.name)) htmls.push(full)
     }
   }
   await rec(root)
@@ -88,15 +110,18 @@ export async function scanLibrary(root) {
 
   const { htmls, folders } = await walk(root)
   const modules = []
+  const skipped = []   // files that were found but couldn't become modules (with why)
 
   for (const file of htmls) {
+    const relFile = toPosix(relative(root, file))
     let html
-    try { html = await fs.readFile(file, 'utf8') } catch { continue }
+    try { html = await fs.readFile(file, 'utf8') } catch { skipped.push({ file: relFile, reason: 'could not read the file (an offline OneDrive file?)' }); continue }
     const man = parseManifest(html)
-    if (!man || !validateManifest(man).ok) continue
+    if (!man) { skipped.push({ file: relFile, reason: 'no module-manifest block found' }); continue }
+    const check = validateManifest(man)
+    if (!check.ok) { skipped.push({ file: relFile, reason: check.errors[0] || 'invalid manifest' }); continue }
 
     const id = man.id
-    const relFile = toPosix(relative(root, file))
     const relFolder = dirname(relFile) === '.' ? '' : dirname(relFile)
     const srcAbs = await siblingSource(file)
 
@@ -149,7 +174,7 @@ export async function scanLibrary(root) {
     const prev = byId.get(m.id)
     if (!prev || finalized.currentVersion > prev.currentVersion) byId.set(m.id, finalized)
   }
-  return { root, folders, modules: [...byId.values()] }
+  return { root, folders, modules: [...byId.values()], htmlCount: htmls.length, skipped }
 }
 
 /** Resolve the on-disk index.html for opening (latest = the live file; older = an archived snapshot). */
@@ -211,14 +236,20 @@ export async function importFiles(root, destRel, filePaths) {
 
 async function walkHtmlUnder(dir) {
   const out = []
+  const seen = new Set()
   async function rec(d) {
+    let key
+    try { key = await fs.realpath(d) } catch { key = d }
+    if (seen.has(key)) return
+    seen.add(key)
     let ents
     try { ents = await fs.readdir(d, { withFileTypes: true }) } catch { return }
     for (const e of ents) {
       if (e.name === HIDDEN) continue
       const full = join(d, e.name)
-      if (e.isDirectory()) await rec(full)
-      else if (/\.html?$/i.test(e.name)) out.push(full)
+      const kind = await entryKind(full, e)
+      if (kind === 'dir') await rec(full)
+      else if (kind === 'file' && /\.html?$/i.test(e.name)) out.push(full)
     }
   }
   await rec(dir)
