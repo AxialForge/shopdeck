@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('shopdeck', {
   revealRoot: () => ipcRenderer.invoke('library:reveal'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', { url }),
 
+  // Multiple named libraries + rename (see electron/libraries.js).
+  libraries: {
+    list: () => ipcRenderer.invoke('libraries:list'),
+    add: () => ipcRenderer.invoke('libraries:add'),
+    rename: (id, name) => ipcRenderer.invoke('libraries:rename', { id, name }),
+    remove: (id) => ipcRenderer.invoke('libraries:remove', { id }),
+    switch: (id) => ipcRenderer.invoke('libraries:switch', { id }),
+    reveal: (id) => ipcRenderer.invoke('libraries:reveal', { id })
+  },
+
   open: (id, version, title) => ipcRenderer.invoke('module:open', { id, version, title }),
   showSource: (id, version) => ipcRenderer.invoke('module:source', { id, version }),
   setMeta: (id, patch) => ipcRenderer.invoke('module:setMeta', { id, ...patch }),
