@@ -110,7 +110,12 @@ export async function scanLibrary(root) {
       rec.versions.push({ version: man.version, created: man.created, updated: man.updated, hash: hashOf(html), dir: `v${man.version}`, source, archivedAt: new Date().toISOString() })
       rec.versions.sort((a, b) => a.version - b.version)
     }
-    rec.lastPath = relFile
+    // Point lastPath at the highest-version file, so a leftover older file with
+    // the same id can't become the "live" file.
+    if (rec.lastVersion === undefined || man.version >= rec.lastVersion) {
+      rec.lastPath = relFile
+      rec.lastVersion = man.version
+    }
 
     const latest = Math.max(...rec.versions.map((v) => v.version))
     modules.push({
@@ -134,7 +139,17 @@ export async function scanLibrary(root) {
   }
 
   await saveIndex(root, idx)
-  return { root, folders, modules }
+
+  // Finalize with the full version picture and dedupe by id (highest-version
+  // file wins), so duplicate files sharing an id can't produce two cards.
+  const byId = new Map()
+  for (const m of modules) {
+    const versions = idx.modules[m.id].versions.map((v) => ({ version: v.version, updated: v.updated, created: v.created, source: v.source }))
+    const finalized = { ...m, versions, latest: Math.max(...versions.map((v) => v.version)) }
+    const prev = byId.get(m.id)
+    if (!prev || finalized.currentVersion > prev.currentVersion) byId.set(m.id, finalized)
+  }
+  return { root, folders, modules: [...byId.values()] }
 }
 
 /** Resolve the on-disk index.html for opening (latest = the live file; older = an archived snapshot). */

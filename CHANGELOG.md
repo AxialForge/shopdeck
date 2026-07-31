@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Test suite for the storage layer (`electron/library.js`) run via `node --test`,
+  and a `ci` workflow (push/PR) plus a test gate on the release build.
+### Fixed
+- `scanLibrary` now dedupes by manifest `id` and resolves the highest-version file,
+  so a leftover older file sharing an id can't double-list or become the "live" one.
+
 ## [0.2.0] — 2026-07-29
 ### Added
 - Read-only vs editing mode (Settings → Mode) — read-only hides import, new folder,

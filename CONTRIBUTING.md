@@ -56,6 +56,8 @@ Commits are authored by **AxialForge** and carry **no** Claude/AI attribution.
 
 ## Verifying a change
 
+- `npm test` must pass (storage-layer suite; CI gates releases on it). Add tests
+  for any change to `electron/library.js`.
 - `npm run build` must pass (compiles all three processes).
 - Check the renderer in a browser (`npm run dev`, open the printed URL) **and** in
   the Electron window — the browser preview alone doesn't prove the packaged app

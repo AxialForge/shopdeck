@@ -47,8 +47,16 @@ in the Electron window too.
 | `npm run build` | Compile main/preload/renderer into `out/`. |
 | `npm run build:win` | `build` + electron-builder → NSIS installer + portable in `dist/`. |
 | `npm run build:portable` | Portable build only. |
+| `npm test` | Run the storage-layer test suite (`node --test`, no Electron). |
 | `npm run seed` | Copy the sample modules into `Documents\ShopDeck Library`. |
 | `npm run preview` | Run the built app. |
+
+## Testing
+
+`electron/library.js` is pure Node, so its tests (`test/*.test.mjs`) run with
+`node --test` — no Electron, no build. They cover manifest parse/validate,
+scanning, versioning + snapshots, overrides, and import. CI runs them on every
+push/PR (`.github/workflows/ci.yml`) and the release build is gated on them.
 
 ## Building the installer
 

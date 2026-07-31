@@ -5,6 +5,7 @@ documents that ShopDeck stores, organizes in a nested folder tree, version-track
 and opens at full fidelity. Point it at a local folder or a network share and
 everyone gets the same organized, searchable library.
 
+[![ci](https://github.com/AxialForge/shopdeck/actions/workflows/ci.yml/badge.svg)](https://github.com/AxialForge/shopdeck/actions/workflows/ci.yml)
 [![release](https://github.com/AxialForge/shopdeck/actions/workflows/release.yml/badge.svg)](https://github.com/AxialForge/shopdeck/actions/workflows/release.yml)
 [![latest release](https://img.shields.io/github/v/release/AxialForge/shopdeck?display_name=tag)](https://github.com/AxialForge/shopdeck/releases/latest)
 ![platform](https://img.shields.io/badge/platform-Windows-blue)

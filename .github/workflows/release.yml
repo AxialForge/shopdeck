@@ -17,6 +17,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm test            # gate the release on green tests
       - run: npm run build:win   # electron-vite build + electron-builder (NSIS + portable)
       - name: Attach installer to the release
         uses: softprops/action-gh-release@v2

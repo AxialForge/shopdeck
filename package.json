@@ -10,6 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "test": "node --test",
     "seed": "node scripts/seed.mjs",
     "build:win": "electron-vite build && electron-builder --win --publish never",
     "build:portable": "electron-vite build && electron-builder --win portable --publish never"

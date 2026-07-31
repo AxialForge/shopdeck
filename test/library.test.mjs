@@ -1,0 +1,150 @@
+// Tests for the pure-Node storage layer (electron/library.js). No Electron —
+// runs under `node --test`. Covers manifest parsing/validation, scanning,
+// versioning + snapshots, title/tag overrides (files untouched), and import.
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  parseManifest, validateManifest, scanLibrary, resolveModuleFile,
+  setOverride, importFiles, createFolder
+} from '../electron/library.js'
+
+const baseMan = (over = {}) => ({
+  schema: 1, id: 't_1', type: 't', title: 'T', version: 1,
+  created: '2026-01-01', updated: '2026-01-01', tags: ['a'], fields: { n: 1 }, ...over
+})
+
+const moduleHtml = (man) =>
+  `<!doctype html><html><head><title>${man.title}</title>\n` +
+  `<script type="application/json" id="module-manifest">\n${JSON.stringify(man)}\n</script>\n` +
+  `</head><body>content</body></html>`
+
+const tmpRoot = () => fs.mkdtemp(join(tmpdir(), 'sd-test-'))
+
+async function writeModule(root, relDir, name, man) {
+  const dir = join(root, relDir)
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(join(dir, name), moduleHtml(man), 'utf8')
+  return join(dir, name)
+}
+
+test('parseManifest extracts the JSON block, returns null when absent/broken', () => {
+  const m = baseMan()
+  assert.deepEqual(parseManifest(moduleHtml(m)), m)
+  assert.equal(parseManifest('<html><body>no manifest</body></html>'), null)
+  assert.equal(parseManifest('<script id="module-manifest">{not json}</script>'), null)
+})
+
+test('validateManifest enforces required fields and formats', () => {
+  assert.equal(validateManifest(baseMan()).ok, true)
+  assert.equal(validateManifest({ ...baseMan(), id: undefined }).ok, false)
+  assert.equal(validateManifest({ ...baseMan(), schema: 2 }).ok, false)
+  assert.equal(validateManifest({ ...baseMan(), id: 'Bad ID' }).ok, false)
+  assert.equal(validateManifest({ ...baseMan(), version: 0 }).ok, false)
+  assert.equal(validateManifest({ ...baseMan(), version: 1.5 }).ok, false)
+})
+
+test('scanLibrary discovers modules, folders, tags, and creates .shopdeck', async () => {
+  const root = await tmpRoot()
+  await writeModule(root, 'Tooling/Timelines', 'a.html', baseMan({ id: 'a_1', tags: ['x', 'y'] }))
+  await writeModule(root, 'Quality', 'b.html', baseMan({ id: 'b_1', tags: ['x'] }))
+
+  const d = await scanLibrary(root)
+  assert.equal(d.modules.length, 2)
+  assert.deepEqual(d.folders.sort(), ['Quality', 'Tooling', 'Tooling/Timelines'])
+
+  const a = d.modules.find((m) => m.id === 'a_1')
+  assert.equal(a.folder, 'Tooling/Timelines')
+  assert.deepEqual(a.tags, ['x', 'y'])
+  assert.equal(a.latest, 1)
+  assert.equal(a.versions.length, 1)
+
+  // .shopdeck index + a version snapshot exist
+  await fs.access(join(root, '.shopdeck', 'index.json'))
+  await fs.access(join(root, '.shopdeck', 'versions', 'a_1', 'v1', 'index.html'))
+})
+
+test('a higher version is snapshotted and kept as history', async () => {
+  const root = await tmpRoot()
+  await writeModule(root, 'M', 'v1.html', baseMan({ id: 'p_1', version: 1, updated: '2026-01-01' }))
+  await scanLibrary(root)
+
+  // a newer build of the same id (dropped in as a separate file)
+  await writeModule(root, 'M', 'v2.html', baseMan({ id: 'p_1', version: 2, updated: '2026-02-01' }))
+  const d = await scanLibrary(root)
+
+  const p = d.modules.find((m) => m.id === 'p_1')
+  assert.equal(p.latest, 2)
+  assert.deepEqual(p.versions.map((v) => v.version), [1, 2])
+  await fs.access(join(root, '.shopdeck', 'versions', 'p_1', 'v2', 'index.html'))
+})
+
+test('setOverride changes title/tags without modifying the module file', async () => {
+  const root = await tmpRoot()
+  const file = await writeModule(root, 'M', 'a.html', baseMan({ id: 'o_1', title: 'Orig', tags: ['a'] }))
+  await scanLibrary(root)
+
+  assert.equal(await setOverride(root, 'o_1', { title: 'New Name', tags: ['x', 'y'] }), true)
+  const d = await scanLibrary(root)
+  const m = d.modules.find((x) => x.id === 'o_1')
+  assert.equal(m.title, 'New Name')
+  assert.deepEqual(m.tags, ['x', 'y'])
+  assert.equal(m.edited, true)
+
+  // the file's own manifest is untouched
+  const onDisk = parseManifest(await fs.readFile(file, 'utf8'))
+  assert.equal(onDisk.title, 'Orig')
+  assert.deepEqual(onDisk.tags, ['a'])
+
+  // clearing reverts to the file
+  await setOverride(root, 'o_1', { title: '', tags: [] })
+  const d2 = await scanLibrary(root)
+  const m2 = d2.modules.find((x) => x.id === 'o_1')
+  assert.equal(m2.title, 'Orig')
+  assert.equal(m2.edited, false)
+})
+
+test('importFiles copies valid modules and rejects ones without a manifest', async () => {
+  const root = await tmpRoot()
+  const src = await fs.mkdtemp(join(tmpdir(), 'sd-src-'))
+  const good = join(src, 'good.html')
+  const bad = join(src, 'bad.html')
+  await fs.writeFile(good, moduleHtml(baseMan({ id: 'imp_1' })), 'utf8')
+  await fs.writeFile(bad, '<html><body>no manifest</body></html>', 'utf8')
+
+  const res = await importFiles(root, 'Imported', [good, bad])
+  assert.equal(res.find((r) => r.file === 'good.html').ok, true)
+  assert.equal(res.find((r) => r.file === 'bad.html').ok, false)
+
+  const d = await scanLibrary(root)
+  const m = d.modules.find((x) => x.id === 'imp_1')
+  assert.ok(m, 'imported module is listed')
+  assert.equal(m.folder, 'Imported')
+})
+
+test('resolveModuleFile returns the live file for latest, a snapshot for older', async () => {
+  const root = await tmpRoot()
+  await writeModule(root, 'M', 'v1.html', baseMan({ id: 'r_1', version: 1 }))
+  await scanLibrary(root)
+  await writeModule(root, 'M', 'v2.html', baseMan({ id: 'r_1', version: 2 }))
+  await scanLibrary(root)
+
+  const latest = await resolveModuleFile(root, 'r_1')
+  assert.equal(latest.version, 2)
+  assert.ok(latest.indexPath.endsWith(join('M', 'v2.html')) || latest.indexPath.includes('v2.html'))
+
+  const old = await resolveModuleFile(root, 'r_1', 1)
+  assert.equal(old.version, 1)
+  assert.ok(old.indexPath.includes(join('.shopdeck', 'versions', 'r_1', 'v1')))
+})
+
+test('createFolder makes a nested folder under the root and blocks traversal', async () => {
+  const root = await tmpRoot()
+  assert.equal(await createFolder(root, 'A/B/C'), true)
+  await fs.access(join(root, 'A', 'B', 'C'))
+  // path traversal is stripped, not honored
+  await createFolder(root, '../escape')
+  await assert.rejects(fs.access(join(root, '..', 'escape')))
+})
