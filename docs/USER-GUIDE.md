@@ -105,6 +105,14 @@ coworker on the shared drive — ShopDeck notices and updates the view without a
 restart. (On some network shares that don't emit change events, reopen or switch
 folders to force a re-scan.)
 
+## Generating a timeline
+
+**Generator tab → Generate from spreadsheet.** Pick the standard timeline workbook
+(a `Swap Log` sheet of events plus a `By Position` sheet of tool positions).
+ShopDeck builds a tool-swap timeline module in the **exact current format** and adds
+it to your library under `Tooling/Timelines`, with the spreadsheet attached as its
+source. If a timeline for that part already exists, it lands as a new version.
+
 ## Themes
 
 **Settings → Theme:** Light, Grey (default), or Black. Applies instantly and is

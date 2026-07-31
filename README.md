@@ -76,6 +76,8 @@ Design principles:
 - **Local or network-share library** — point the root at a shared drive so a whole
   team reads one library.
 - **Three themes** — light, grey, black (AxialForge royal-blue accent).
+- **Timeline generator** — turn the standard spreadsheet into a tool-swap timeline
+  module in the exact current format, added straight to your library.
 - **Manual updater** — a one-click *Check for updates* against GitHub Releases;
   nothing phones home on its own.
 
@@ -210,9 +212,9 @@ reads). Details in [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Roadmap
 
-- Library backup/export.
-- In-app delete/move for modules and folders; drag-and-drop import.
-- Optional xlsx→HTML generator for the timeline module type.
+- Move modules between folders in-app (today: rearrange in Explorer / on the share).
+- More generators and module types.
+- Code signing to remove the Windows SmartScreen prompt on install.
 
 ## Documentation
 

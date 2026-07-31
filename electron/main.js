@@ -3,6 +3,9 @@ import { join, basename } from 'node:path'
 import { promises as fs, watch } from 'node:fs'
 import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions, deleteModule, deleteFolder, backupLibrary } from './library.js'
 import * as updater from './updater.js'
+import XLSX from 'xlsx'
+import { generateTimeline } from './generators/timeline.js'
+import timelineTemplate from './generators/timeline-template.html?raw'
 
 // ---- Settings (userData/settings.json) --------------------------------------
 const DEFAULTS = { libraryRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
@@ -232,6 +235,30 @@ ipcMain.handle('folder:delete', async (_e, { relPath }) => {
   if (res.response !== 1) return { canceled: true }
   await deleteFolder(await libraryRoot(), relPath)
   return { canceled: false }
+})
+
+// ---- Generators ------------------------------------------------------------
+ipcMain.handle('generator:timeline', async (_e, { destRel } = {}) => {
+  const pick = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose the timeline spreadsheet',
+    filters: [{ name: 'Excel workbook', extensions: ['xlsx', 'xls'] }], properties: ['openFile']
+  })
+  if (pick.canceled || !pick.filePaths[0]) return { canceled: true }
+
+  let result
+  try {
+    const wb = XLSX.readFile(pick.filePaths[0])
+    result = generateTimeline({ wb, template: timelineTemplate, today: new Date().toISOString().slice(0, 10) })
+  } catch (err) { return { canceled: false, error: String(err.message || err) } }
+
+  const root = await libraryRoot()
+  const rel = destRel || 'Tooling/Timelines'
+  const dir = join(root, rel)
+  await fs.mkdir(dir, { recursive: true })
+  const base = `tool-swap-timeline_${result.part}`
+  await fs.writeFile(join(dir, `${base}.html`), result.html, 'utf8')
+  try { await fs.copyFile(pick.filePaths[0], join(dir, `${base}.xlsx`)) } catch { /* source optional */ }
+  return { canceled: false, part: result.part, events: result.data.events.length, positions: result.data.lanes.length, folder: rel }
 })
 
 ipcMain.handle('library:backup', async () => {

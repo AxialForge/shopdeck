@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('shopdeck', {
   deleteModule: (id, title) => ipcRenderer.invoke('module:delete', { id, title }),
   deleteFolder: (relPath) => ipcRenderer.invoke('folder:delete', { relPath }),
   backup: () => ipcRenderer.invoke('library:backup'),
+  generateTimeline: (destRel) => ipcRenderer.invoke('generator:timeline', { destRel }),
   thumb: (id, version) => ipcRenderer.invoke('module:thumb', { id, version }),
   onLibraryChanged: (cb) => {
     const fn = () => cb()

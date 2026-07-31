@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 ### Added
-- Tabbed navigation: Home, Library, Generator (placeholder for module generators),
-  Settings, and About (description, version, GitHub + releases links).
+- Timeline generator (Generator tab): pick the standard spreadsheet (a "Swap Log"
+  + "By Position" workbook) and produce a tool-swap timeline module in the **exact
+  current format**, added to the library with the spreadsheet attached. Verified to
+  reproduce existing timelines' data exactly across every sample part.
+- Tabbed navigation: Home, Library, Generator, Settings, and About (description,
+  version, GitHub + releases links).
 - In-app delete for modules and folders (with a confirmation), and a one-click
   library backup (copies the whole library to a chosen location).
 - Attach a whole folder (its modules + subfolder structure), and drag-and-drop

@@ -282,7 +282,7 @@ export default function App() {
         )}
 
       {view === 'home' && <HomeView data={data} settings={settings} go={setView} onOpenRoot={() => api?.revealRoot()} />}
-      {view === 'generator' && <GeneratorView go={setView} />}
+      {view === 'generator' && <GeneratorView go={setView} onGenerated={reload} />}
       {view === 'settings' && <SettingsView settings={settings} root={data.root} onChangeTheme={onChangeTheme}
         onChangeMode={onChangeMode} onChangeRoot={onChangeRoot} onReveal={() => api?.revealRoot()} hasApi={!!api} />}
       {view === 'about' && <AboutView />}
@@ -375,15 +375,41 @@ function HomeView({ data, settings, go, onOpenRoot }) {
   )
 }
 
-function GeneratorView() {
+function GeneratorView({ onGenerated, go }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  async function run() {
+    if (!api) return
+    setBusy(true); setError(''); setResult(null)
+    const r = await api.generateTimeline()
+    setBusy(false)
+    if (r?.canceled) return
+    if (r?.error) { setError(r.error); return }
+    setResult(r); onGenerated?.()
+  }
   return (
     <div className="page">
       <h2>Generators</h2>
-      <p>Build modules from source data. Generators live here — each turns an input
-        (like a spreadsheet) into a self-contained module in the exact standard format.</p>
-      <div className="empty">
-        The tool-swap timeline generator is coming soon: upload the standard
-        spreadsheet and produce a timeline module identical to the current format.
+      <p>Build modules from source data. Each generator turns an input into a
+        self-contained module in the exact standard format.</p>
+      <div className="gen-card">
+        <div className="set-title">Tool-swap timeline</div>
+        <p className="muted small">Pick the standard timeline spreadsheet (a workbook with a
+          <code> Swap Log </code> and a <code> By Position </code> sheet). It produces a timeline
+          module in the exact current format and adds it to your library under
+          <code> Tooling/Timelines</code>, with the spreadsheet attached as its source.</p>
+        <div className="set-actions">
+          <Button label={busy ? 'Generating…' : 'Generate from spreadsheet'} variant="primary" onClick={run} />
+        </div>
+        {error && <div className="small err" style={{ marginTop: 8 }}>{error}</div>}
+        {result && (
+          <div className="small" style={{ marginTop: 8 }}>
+            Created <b>{result.part}</b> — {result.events.toLocaleString()} swaps across {result.positions} positions,
+            in {result.folder}. <button className="linkbtn" onClick={() => go('library')}>Open in Library</button>
+          </div>
+        )}
+        {!api && <div className="muted small">(Runs in the desktop app.)</div>}
       </div>
     </div>
   )

@@ -126,6 +126,16 @@ installer + portable exe under `dist/`, embedding `build/icon.ico` and generatin
 `latest.yml` from the `publish` config. CI runs this on a Windows runner on every
 `v*` tag. See [BUILDING.md](BUILDING.md).
 
+## Generators
+
+`electron/generators/` turns source data into modules. The tool-swap timeline
+generator (`timeline.js`, pure Node) reads the standard workbook (SheetJS) into the
+timeline `DATA` object and injects it into a real timeline HTML template
+(`timeline-template.html`, inlined via `?raw`) — so all CSS/JS/structure stay
+byte-identical to the current standard. Its transform is verified against the
+existing sample timelines (their generated `DATA` matches the originals exactly)
+and covered by `test/generator.test.mjs`.
+
 ## Why no native modules
 
 This is a deliberate constraint, not an accident. A native module (e.g. a

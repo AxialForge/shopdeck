@@ -20,7 +20,8 @@
     "@astryxdesign/theme-neutral": "^0.1.9",
     "electron-updater": "^6.8.9",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@astryxdesign/cli": "^0.1.9",
