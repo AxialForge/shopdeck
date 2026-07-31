@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   parseManifest, validateManifest, scanLibrary, resolveModuleFile,
-  setOverride, importFiles, createFolder
+  setOverride, importFiles, importTree, createFolder
 } from '../electron/library.js'
 
 const baseMan = (over = {}) => ({
@@ -122,6 +122,22 @@ test('importFiles copies valid modules and rejects ones without a manifest', asy
   const m = d.modules.find((x) => x.id === 'imp_1')
   assert.ok(m, 'imported module is listed')
   assert.equal(m.folder, 'Imported')
+})
+
+test('importTree copies a folder preserving its subfolder structure', async () => {
+  const root = await tmpRoot()
+  const src = await fs.mkdtemp(join(tmpdir(), 'sd-tree-'))
+  await fs.mkdir(join(src, 'A', 'B'), { recursive: true })
+  await fs.writeFile(join(src, 'A', 'x.html'), moduleHtml(baseMan({ id: 'tx_1' })), 'utf8')
+  await fs.writeFile(join(src, 'A', 'B', 'y.html'), moduleHtml(baseMan({ id: 'ty_1' })), 'utf8')
+  await fs.writeFile(join(src, 'A', 'note.txt'), 'ignore me', 'utf8')
+
+  const res = await importTree(root, 'Attached', src)
+  assert.equal(res.filter((r) => r.ok).length, 2)
+
+  const d = await scanLibrary(root)
+  assert.equal(d.modules.find((m) => m.id === 'tx_1').folder, 'Attached/A')
+  assert.equal(d.modules.find((m) => m.id === 'ty_1').folder, 'Attached/A/B')
 })
 
 test('resolveModuleFile returns the live file for latest, a snapshot for older', async () => {

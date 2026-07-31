@@ -21,6 +21,12 @@ Add modules by **Import**ing them, or by dropping `.html` files (and their sibli
 sources) into folders under that root. To use a shared library instead, go to
 **Settings → Library folder → Change folder…** and pick a network share.
 
+## Getting around
+
+The tab row at the top switches between **Home** (a quick dashboard), **Library**
+(your modules), **Generator** (where module generators will live), **Settings**,
+and **About**.
+
 ## The library view
 
 - **Folder tree** (left) — mirrors the folders under your library root. Click a
@@ -52,13 +58,17 @@ These stack — e.g. *Tooling ▸ Timelines* + tag `blocker` + search `147`.
 
 ## Importing modules
 
-1. Navigate to the folder you want the module to land in.
-2. Click **Import** and pick one or more `.html` files.
-3. ShopDeck copies each file (and any same-named `.xlsx`/`.csv` source) into that
-   folder and adds it to the library.
+Everything lands in the folder you're currently viewing. Three ways to bring
+modules in:
 
-Re-importing a file whose manifest `version` is higher than what's stored files it
-as a **new version**, keeping the previous one in history.
+- **Import** — pick one or more `.html` files.
+- **Attach folder** — pick a folder; its modules **and subfolder structure** are
+  copied in (great for bringing an existing library of timelines across).
+- **Drag and drop** — drop files or folders straight onto the library window.
+
+Each module's same-named source (`.xlsx`/`.csv`) rides along. Re-importing a file
+whose manifest `version` is higher files it as a **new version**, keeping the old
+one in history.
 
 ## Editing title &amp; tags
 

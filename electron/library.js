@@ -209,6 +209,45 @@ export async function importFiles(root, destRel, filePaths) {
   return done
 }
 
+async function walkHtmlUnder(dir) {
+  const out = []
+  async function rec(d) {
+    let ents
+    try { ents = await fs.readdir(d, { withFileTypes: true }) } catch { return }
+    for (const e of ents) {
+      if (e.name === HIDDEN) continue
+      const full = join(d, e.name)
+      if (e.isDirectory()) await rec(full)
+      else if (/\.html?$/i.test(e.name)) out.push(full)
+    }
+  }
+  await rec(dir)
+  return out
+}
+
+/**
+ * Attach a whole folder of modules, preserving its internal subfolder structure
+ * under destRel. Copies each valid module .html (+ sibling source).
+ */
+export async function importTree(root, destRel, srcDir) {
+  const files = await walkHtmlUnder(srcDir)
+  const done = []
+  for (const f of files) {
+    let html
+    try { html = await fs.readFile(f, 'utf8') } catch { done.push({ ok: false, file: basename(f), error: 'unreadable' }); continue }
+    const man = parseManifest(html)
+    if (!man || !validateManifest(man).ok) { done.push({ ok: false, file: basename(f), error: 'invalid or missing manifest' }); continue }
+    const rel = toPosix(relative(srcDir, dirname(f)))              // subfolder under the picked dir
+    const dest = join(root, destRel || '', rel)
+    await fs.mkdir(dest, { recursive: true })
+    await fs.copyFile(f, join(dest, basename(f)))
+    const src = await siblingSource(f)
+    if (src) await fs.copyFile(src, join(dest, basename(src)))
+    done.push({ ok: true, file: basename(f), id: man.id, folder: toPosix(join(destRel || '', rel)) })
+  }
+  return done
+}
+
 export async function createFolder(root, relPath) {
   const clean = String(relPath || '').replace(/[.]{2,}/g, '').replace(/^[/\\]+/, '')
   if (!clean) return false

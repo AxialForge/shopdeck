@@ -4,6 +4,10 @@
 // main — so after switching versions the toolbar rebuilds correctly.
 import { ipcRenderer } from 'electron'
 
+// Dropping a file onto a window otherwise navigates it to file:/// — block that.
+window.addEventListener('dragover', (e) => e.preventDefault())
+window.addEventListener('drop', (e) => e.preventDefault())
+
 function readManifest() {
   const el = document.getElementById('module-manifest')
   if (!el) return null

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, screen } from 'electron'
 import { join, basename } from 'node:path'
 import { promises as fs, watch } from 'node:fs'
-import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder, moduleVersions } from './library.js'
+import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions } from './library.js'
 import * as updater from './updater.js'
 
 // ---- Settings (userData/settings.json) --------------------------------------
@@ -29,6 +29,13 @@ async function libraryRoot() {
 // ---- Windows ----------------------------------------------------------------
 let mainWindow = null
 const moduleWindows = new Set()
+
+// Never let a dropped file/folder (or a stray link) navigate a window away from
+// the app — that used to blank the window when attaching a folder.
+function hardenWindow(win) {
+  win.webContents.on('will-navigate', (e, url) => { if (url !== win.webContents.getURL()) e.preventDefault() })
+  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+}
 
 // ---- Library watcher (auto-refresh) -----------------------------------------
 // Watch the root and nudge the renderer to re-scan when files change (e.g. a
@@ -62,6 +69,7 @@ function createMainWindow() {
     }
   })
   mainWindow.once('ready-to-show', () => mainWindow.show())
+  hardenWindow(mainWindow)
   if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   else mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
 }
@@ -102,6 +110,7 @@ ipcMain.handle('library:chooseRoot', async () => {
 })
 
 ipcMain.handle('library:reveal', async () => { await shell.openPath(await libraryRoot()); return true })
+ipcMain.handle('shell:openExternal', (_e, { url }) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); return true })
 
 ipcMain.handle('module:open', async (_e, { id, version, title }) => {
   const root = await libraryRoot()
@@ -174,6 +183,30 @@ ipcMain.handle('module:import', async (_e, { destRel } = {}) => {
   })
   if (res.canceled) return { canceled: true }
   const results = await importFiles(await libraryRoot(), destRel || '', res.filePaths)
+  return { canceled: false, results }
+})
+
+// Attach a whole folder (its module files + subfolder structure).
+ipcMain.handle('module:importFolder', async (_e, { destRel } = {}) => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Attach a folder of modules', properties: ['openDirectory']
+  })
+  if (res.canceled || !res.filePaths[0]) return { canceled: true }
+  const results = await importTree(await libraryRoot(), destRel || '', res.filePaths[0])
+  return { canceled: false, results }
+})
+
+// Import dropped OS paths (files or folders).
+ipcMain.handle('module:importPaths', async (_e, { paths, destRel } = {}) => {
+  const root = await libraryRoot()
+  const results = []
+  for (const p of paths || []) {
+    try {
+      const st = await fs.stat(p)
+      if (st.isDirectory()) results.push(...await importTree(root, destRel || '', p))
+      else results.push(...await importFiles(root, destRel || '', [p]))
+    } catch (err) { results.push({ ok: false, file: basename(p), error: String(err.message || err) }) }
+  }
   return { canceled: false, results }
 })
 

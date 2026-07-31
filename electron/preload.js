@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('shopdeck', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
@@ -7,12 +7,16 @@ contextBridge.exposeInMainWorld('shopdeck', {
   scan: () => ipcRenderer.invoke('library:scan'),
   chooseRoot: () => ipcRenderer.invoke('library:chooseRoot'),
   revealRoot: () => ipcRenderer.invoke('library:reveal'),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', { url }),
 
   open: (id, version, title) => ipcRenderer.invoke('module:open', { id, version, title }),
   showSource: (id, version) => ipcRenderer.invoke('module:source', { id, version }),
   setMeta: (id, patch) => ipcRenderer.invoke('module:setMeta', { id, ...patch }),
 
   importInto: (destRel) => ipcRenderer.invoke('module:import', { destRel }),
+  importFolder: (destRel) => ipcRenderer.invoke('module:importFolder', { destRel }),
+  importPaths: (paths, destRel) => ipcRenderer.invoke('module:importPaths', { paths, destRel }),
+  getFilePath: (file) => webUtils.getPathForFile(file),
   createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath }),
   thumb: (id, version) => ipcRenderer.invoke('module:thumb', { id, version }),
   onLibraryChanged: (cb) => {

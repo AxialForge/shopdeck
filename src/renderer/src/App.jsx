@@ -31,6 +31,16 @@ const SAMPLE = {
 const sparkHeights = (seed) => Array.from({ length: 10 }, (_, i) => 30 + ((seed * 7 + i * 37) % 55))
 const parseTags = (s) => [...new Set(String(s).split(/[,\s]+/).map((t) => t.trim().toLowerCase()).filter(Boolean))]
 
+const TABS = [
+  { id: 'home', label: 'Home' },
+  { id: 'library', label: 'Library' },
+  { id: 'generator', label: 'Generator' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'about', label: 'About' }
+]
+const GITHUB = 'https://github.com/AxialForge/shopdeck'
+const openExternal = (url) => (api ? api.openExternal(url) : window.open(url, '_blank'))
+
 function buildTree(folders) {
   const root = { name: 'All', path: '', children: new Map() }
   for (const f of folders) {
@@ -48,7 +58,8 @@ export default function App() {
   const [settings, setSettings] = useState({ theme: 'grey', libraryRoot: '', mode: 'editing' })
   const [data, setData] = useState({ root: '', folders: [], modules: [] })
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState('library') // 'library' | 'settings'
+  const [view, setView] = useState('home') // home | library | generator | settings | about
+  const [dropping, setDropping] = useState(false)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('updated')
   const [folder, setFolder] = useState('')
@@ -93,6 +104,14 @@ export default function App() {
     return api.onLibraryChanged(async () => { setData(await api.scan()) })
   }, [])
 
+  // A drop anywhere must never navigate the window away (the folder-attach bug).
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault()
+    window.addEventListener('dragover', prevent)
+    window.addEventListener('drop', prevent)
+    return () => { window.removeEventListener('dragover', prevent); window.removeEventListener('drop', prevent) }
+  }, [])
+
   const tree = useMemo(() => buildTree(data.folders), [data.folders])
   const countIn = useCallback(
     (p) => data.modules.filter((m) => p === '' || m.folder === p || m.folder.startsWith(p + '/')).length,
@@ -126,6 +145,15 @@ export default function App() {
   })
 
   async function onImport() { if (!api) return; const r = await api.importInto(folder); if (!r?.canceled) reload() }
+  async function onImportFolder() { if (!api) return; const r = await api.importFolder(folder); if (!r?.canceled) reload() }
+  async function onDropImport(e) {
+    e.preventDefault(); setDropping(false)
+    if (!api || !canEdit) return
+    const paths = [...(e.dataTransfer?.files || [])].map((f) => { try { return api.getFilePath(f) } catch { return null } }).filter(Boolean)
+    if (!paths.length) return
+    const r = await api.importPaths(paths, folder)
+    if (!r?.canceled) reload()
+  }
   async function onChangeTheme(t) { applyTheme(t); setSettings((s) => ({ ...s, theme: t })); if (api) await api.setSettings({ theme: t }) }
   async function onChangeRoot() { if (!api) return; const r = await api.chooseRoot(); if (!r?.canceled) reload() }
   async function saveEdit(id, title, tags) { if (api) await api.setMeta(id, { title, tags }); setEditing(null); reload() }
@@ -143,15 +171,15 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <div className="brand"><span className="mark">S</span> ShopDeck</div>
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <button key={t.id} className={'tab' + (view === t.id ? ' on' : '')} onClick={() => setView(t.id)}>{t.label}</button>
+          ))}
+        </nav>
         <span className="count">{data.modules.length} module{data.modules.length === 1 ? '' : 's'}</span>
-        <Button label={view === 'settings' ? 'Library' : 'Settings'} variant="ghost"
-          onClick={() => setView(view === 'settings' ? 'library' : 'settings')} />
       </div>
 
-      {view === 'settings'
-        ? <SettingsView settings={settings} root={data.root} onChangeTheme={onChangeTheme}
-            onChangeMode={onChangeMode} onChangeRoot={onChangeRoot} onReveal={() => api?.revealRoot()} hasApi={!!api} />
-        : (
+      {view === 'library' && (
           <>
             <div className="toolbar">
               <div className="search">
@@ -164,10 +192,14 @@ export default function App() {
                 <SegmentedControlItem value="swaps" label="Swaps" />
               </SegmentedControl>
               {canEdit && <Button label="New folder" variant="secondary" onClick={() => setNewFolderOpen(true)} />}
+              {canEdit && <Button label="Attach folder" variant="secondary" onClick={onImportFolder} />}
               {canEdit && <Button label="Import" variant="primary" onClick={onImport} />}
             </div>
 
-            <div className="main">
+            <div className={'main' + (dropping ? ' dropping' : '')}
+              onDragOver={(e) => { if (canEdit) { e.preventDefault(); setDropping(true) } }}
+              onDragLeave={() => setDropping(false)}
+              onDrop={onDropImport}>
               <aside className="sidebar">
                 <div className="side-h">Folders</div>
                 <TreeNode node={tree} depth={0} current={folder} onSelect={setFolder} countIn={countIn} />
@@ -241,8 +273,14 @@ export default function App() {
           </>
         )}
 
+      {view === 'home' && <HomeView data={data} settings={settings} go={setView} onOpenRoot={() => api?.revealRoot()} />}
+      {view === 'generator' && <GeneratorView go={setView} />}
+      {view === 'settings' && <SettingsView settings={settings} root={data.root} onChangeTheme={onChangeTheme}
+        onChangeMode={onChangeMode} onChangeRoot={onChangeRoot} onReveal={() => api?.revealRoot()} hasApi={!!api} />}
+      {view === 'about' && <AboutView />}
+
       <div className="footer">
-        <span>{view === 'settings' ? 'Settings' : `${shown.length} shown`}</span>
+        <span>{view === 'library' ? `${shown.length} shown` : (TABS.find((t) => t.id === view)?.label || '')}</span>
         <span className="spacer" />
         <span className="muted">theme: {settings.theme}</span>
       </div>
@@ -304,6 +342,59 @@ function NameModal({ title, placeholder, note, onCancel, onSave }) {
           <Button label="Cancel" variant="secondary" onClick={onCancel} />
           <Button label="Create" variant="primary" onClick={() => onSave(name.trim().replace(/[\\/]/g, '-'))} />
         </div>
+      </div>
+    </div>
+  )
+}
+
+function HomeView({ data, settings, go, onOpenRoot }) {
+  return (
+    <div className="page">
+      <h2>Welcome to ShopDeck</h2>
+      <p className="muted">A library for your interactive work-item modules — stored, organized, and version-tracked.</p>
+      <div className="stats">
+        <div className="stat"><div className="v">{data.modules.length}</div><div className="l">Modules</div></div>
+        <div className="stat"><div className="v">{data.folders.length}</div><div className="l">Folders</div></div>
+        <div className="stat"><div className="v" style={{ textTransform: 'capitalize' }}>{settings.theme}</div><div className="l">Theme</div></div>
+      </div>
+      <div className="rootline"><span className="muted small">Library:&nbsp;</span><code>{data.root || '—'}</code></div>
+      <div className="set-actions">
+        <Button label="Open the library" variant="primary" onClick={() => go('library')} />
+        <Button label="Open library folder" variant="ghost" onClick={onOpenRoot} />
+        <Button label="Generators" variant="secondary" onClick={() => go('generator')} />
+      </div>
+    </div>
+  )
+}
+
+function GeneratorView() {
+  return (
+    <div className="page">
+      <h2>Generators</h2>
+      <p>Build modules from source data. Generators live here — each turns an input
+        (like a spreadsheet) into a self-contained module in the exact standard format.</p>
+      <div className="empty">
+        The tool-swap timeline generator is coming soon: upload the standard
+        spreadsheet and produce a timeline module identical to the current format.
+      </div>
+    </div>
+  )
+}
+
+function AboutView() {
+  const [version, setVersion] = useState('')
+  useEffect(() => { if (api) api.appVersion().then(setVersion) }, [])
+  return (
+    <div className="page">
+      <h2>ShopDeck{version ? ` v${version}` : ''}</h2>
+      <p>A desktop library for interactive work-item modules — self-contained HTML
+        documents that ShopDeck stores, organizes in a nested folder tree,
+        version-tracks, and opens at full fidelity. Point it at a local folder or a
+        network share and everyone gets the same organized, searchable library.</p>
+      <p className="muted small">© 2026 AxialForge · Apache-2.0 licensed</p>
+      <div className="set-actions">
+        <Button label="GitHub repository" variant="secondary" onClick={() => openExternal(GITHUB)} />
+        <Button label="Releases / downloads" variant="secondary" onClick={() => openExternal(`${GITHUB}/releases/latest`)} />
       </div>
     </div>
   )

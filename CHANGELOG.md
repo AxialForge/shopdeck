@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 ### Added
+- Tabbed navigation: Home, Library, Generator (placeholder for module generators),
+  Settings, and About (description, version, GitHub + releases links).
+- Attach a whole folder (its modules + subfolder structure), and drag-and-drop
+  files/folders onto the library to import them.
 - Module viewer toolbar: a floating bar with a version picker, Source, Compare
   (side-by-side versions), and Close — injected over the module without altering it.
+### Fixed
+- Dropping a file/folder onto a window no longer navigates it away (the blank
+  "attach folder" failure); drops are handled as imports instead.
 - Test suite for the storage layer (`electron/library.js`) run via `node --test`,
   and a `ci` workflow (push/PR) plus a test gate on the release build.
 ### Fixed
