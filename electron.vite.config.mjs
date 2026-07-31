@@ -11,7 +11,7 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    build: { rollupOptions: { input: { index: r('electron/preload.js') } } }
+    build: { rollupOptions: { input: { index: r('electron/preload.js'), viewer: r('electron/viewer-preload.js') } } }
   },
   renderer: {
     root: r('src/renderer'),

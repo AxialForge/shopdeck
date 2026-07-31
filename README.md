@@ -210,8 +210,8 @@ reads). Details in [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Roadmap
 
-- Side-by-side version compare (opening any past version is already supported).
 - Library backup/export.
+- In-app delete/move for modules and folders; drag-and-drop import.
 - Optional xlsx→HTML generator for the timeline module type.
 
 ## Documentation

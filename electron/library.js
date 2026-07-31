@@ -168,6 +168,15 @@ export async function resolveModuleFile(root, id, version) {
   return { indexPath: live, sourcePath: await siblingSource(live), version: latest }
 }
 
+/** Version list for a module id (for the viewer toolbar). */
+export async function moduleVersions(root, id) {
+  const idx = await loadIndex(root)
+  const rec = idx.modules?.[id]
+  if (!rec?.versions?.length) return null
+  const versions = rec.versions.map((v) => ({ version: v.version, updated: v.updated, source: v.source }))
+  return { versions, latest: Math.max(...versions.map((v) => v.version)) }
+}
+
 /** Persist app-side title/tag overrides (module files are never touched). */
 export async function setOverride(root, id, patch) {
   const idx = await loadIndex(root)

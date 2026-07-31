@@ -36,8 +36,10 @@ sources) into folders under that root. To use a shared library instead, go to
 ## Opening a module
 
 Click a card. The module opens in **its own window** at full size, with all of its
-built-in interactivity working (zoom, fit, filters, hover). Close the window to
-return; the library stays as you left it.
+built-in interactivity working (zoom, fit, filters, hover). A small floating
+toolbar sits at the bottom with a **version picker**, **Source** (reveal the
+attached file), **Compare** (open another version side-by-side), and **Close**.
+The library window stays as you left it.
 
 ## Searching, sorting, filtering
 
@@ -76,7 +78,8 @@ ShopDeck mirrors whatever structure is there.
 Every time a module is rebuilt with a higher `version`, ShopDeck keeps the old one.
 The card shows the latest version badge, and — when there's more than one version —
 a **version row** (`v3 v2 v1`); click any of them to open that specific version.
-Clicking the card itself opens the latest. (Side-by-side compare is on the roadmap.)
+Clicking the card itself opens the latest. Inside the module window, the toolbar's
+version picker switches versions and **Compare** tiles two versions side-by-side.
 
 ## Read-only vs editing mode
 

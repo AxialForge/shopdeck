@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, screen } from 'electron'
 import { join, basename } from 'node:path'
 import { promises as fs, watch } from 'node:fs'
-import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder } from './library.js'
+import { scanLibrary, resolveModuleFile, setOverride, importFiles, createFolder, moduleVersions } from './library.js'
 import * as updater from './updater.js'
 
 // ---- Settings (userData/settings.json) --------------------------------------
@@ -71,12 +71,16 @@ function openModuleWindow({ indexPath, title, version }) {
     width: 1280, height: 860,
     title: version ? `${title}  ·  v${version}` : title,
     backgroundColor: '#f4f6f8',
-    webPreferences: { contextIsolation: true, nodeIntegration: false }
+    webPreferences: {
+      preload: join(__dirname, '../preload/viewer.js'),
+      contextIsolation: true, nodeIntegration: false
+    }
   })
   win.setMenuBarVisibility(false)
   win.loadFile(indexPath)
   moduleWindows.add(win)
   win.on('closed', () => moduleWindows.delete(win))
+  return win
 }
 
 // ---- IPC --------------------------------------------------------------------
@@ -105,6 +109,48 @@ ipcMain.handle('module:open', async (_e, { id, version, title }) => {
   if (!info) throw new Error(`module not found: ${id}`)
   openModuleWindow({ ...info, title: title || id })
   return true
+})
+
+// ---- Viewer toolbar (module windows) ----------------------------------------
+ipcMain.handle('viewer:info', async (_e, { id }) => {
+  const root = await libraryRoot()
+  const mv = await moduleVersions(root, id)
+  if (!mv) return null
+  const live = await resolveModuleFile(root, id)
+  return { ...mv, hasSource: !!live?.sourcePath }
+})
+
+ipcMain.handle('viewer:open', async (e, { id, version }) => {
+  const info = await resolveModuleFile(await libraryRoot(), id, version)
+  if (!info) return false
+  const w = BrowserWindow.fromWebContents(e.sender)
+  if (w) { w.loadFile(info.indexPath); w.setTitle(`${id}  ·  v${info.version}`) }
+  return true
+})
+
+ipcMain.handle('viewer:source', async (e, { id, version }) => {
+  const info = await resolveModuleFile(await libraryRoot(), id, version)
+  if (!info?.sourcePath) return { ok: false }
+  await shell.showItemInFolder(info.sourcePath)
+  return { ok: true }
+})
+
+ipcMain.handle('viewer:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.close() })
+
+ipcMain.handle('viewer:compare', async (e, { id, version }) => {
+  const root = await libraryRoot()
+  const mv = await moduleVersions(root, id)
+  if (!mv || mv.versions.length < 2) return
+  const other = version === mv.latest ? version - 1 : mv.latest
+  const info = await resolveModuleFile(root, id, other)
+  if (!info) return
+  const cur = BrowserWindow.fromWebContents(e.sender)
+  if (!cur) return
+  const wa = screen.getDisplayMatching(cur.getBounds()).workArea
+  const half = Math.floor(wa.width / 2)
+  cur.setBounds({ x: wa.x, y: wa.y, width: half, height: wa.height })
+  const w2 = openModuleWindow({ indexPath: info.indexPath, title: id, version: info.version })
+  w2.setBounds({ x: wa.x + half, y: wa.y, width: wa.width - half, height: wa.height })
 })
 
 ipcMain.handle('module:source', async (_e, { id, version }) => {

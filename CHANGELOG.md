@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 ### Added
+- Module viewer toolbar: a floating bar with a version picker, Source, Compare
+  (side-by-side versions), and Close — injected over the module without altering it.
 - Test suite for the storage layer (`electron/library.js`) run via `node --test`,
   and a `ci` workflow (push/PR) plus a test gate on the release build.
 ### Fixed
