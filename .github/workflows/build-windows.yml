@@ -5,13 +5,15 @@ name: build-windows
 # installers and uploads them as a private workflow ARTIFACT — downloadable by
 # repo collaborators, auto-expiring, nothing published outward.
 #
-# Trigger it either way:
-#   - Actions tab -> "build-windows" -> Run workflow   (workflow_dispatch)
+# Trigger it any of these ways:
+#   - Actions tab -> "build-windows" -> Run workflow   (workflow_dispatch, once on the default branch)
 #   - push a lightweight tag matching winbuild-*        (e.g. winbuild-1)
+#   - push to the claude/shopdeck-file-selection-bug branch (builds this WIP branch)
 
 on:
   workflow_dispatch:
   push:
+    branches: ['claude/shopdeck-file-selection-bug-j00q7y']
     tags: ['winbuild-*']
 
 jobs:
