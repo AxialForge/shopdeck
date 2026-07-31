@@ -1,0 +1,38 @@
+name: build-windows
+
+# On-demand Windows installer build. Unlike release.yml (which fires on a v*
+# tag and publishes a public GitHub Release), this builds the same NSIS + portable
+# installers and uploads them as a private workflow ARTIFACT — downloadable by
+# repo collaborators, auto-expiring, nothing published outward.
+#
+# Trigger it either way:
+#   - Actions tab -> "build-windows" -> Run workflow   (workflow_dispatch)
+#   - push a lightweight tag matching winbuild-*        (e.g. winbuild-1)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['winbuild-*']
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test              # same green-tests gate as release.yml
+      - run: npm run build:win     # electron-vite build + electron-builder (NSIS + portable)
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopdeck-windows-installer
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
