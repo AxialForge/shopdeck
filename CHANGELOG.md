@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0] — 2026-07-30
 ### Added
 - Timeline generator (Generator tab): pick the standard spreadsheet (a "Swap Log"
   + "By Position" workbook) and produce a tool-swap timeline module in the **exact
