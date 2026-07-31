@@ -4,6 +4,8 @@
 ### Added
 - Tabbed navigation: Home, Library, Generator (placeholder for module generators),
   Settings, and About (description, version, GitHub + releases links).
+- In-app delete for modules and folders (with a confirmation), and a one-click
+  library backup (copies the whole library to a chosen location).
 - Attach a whole folder (its modules + subfolder structure), and drag-and-drop
   files/folders onto the library to import them.
 - Module viewer toolbar: a floating bar with a version picker, Source, Compare

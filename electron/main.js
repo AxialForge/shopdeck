@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, screen } from 'electron'
 import { join, basename } from 'node:path'
 import { promises as fs, watch } from 'node:fs'
-import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions } from './library.js'
+import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions, deleteModule, deleteFolder, backupLibrary } from './library.js'
 import * as updater from './updater.js'
 
 // ---- Settings (userData/settings.json) --------------------------------------
@@ -211,6 +211,38 @@ ipcMain.handle('module:importPaths', async (_e, { paths, destRel } = {}) => {
 })
 
 ipcMain.handle('folder:create', async (_e, { relPath }) => createFolder(await libraryRoot(), relPath))
+
+ipcMain.handle('module:delete', async (_e, { id, title }) => {
+  const res = await dialog.showMessageBox(mainWindow, {
+    type: 'warning', buttons: ['Cancel', 'Delete'], defaultId: 0, cancelId: 0,
+    title: 'Delete module', message: `Delete "${title || id}"?`,
+    detail: 'This removes the module and its version history from the library. This cannot be undone.'
+  })
+  if (res.response !== 1) return { canceled: true }
+  await deleteModule(await libraryRoot(), id)
+  return { canceled: false }
+})
+
+ipcMain.handle('folder:delete', async (_e, { relPath }) => {
+  const res = await dialog.showMessageBox(mainWindow, {
+    type: 'warning', buttons: ['Cancel', 'Delete'], defaultId: 0, cancelId: 0,
+    title: 'Delete folder', message: `Delete the folder "${relPath}"?`,
+    detail: 'This removes the folder and every module inside it. This cannot be undone.'
+  })
+  if (res.response !== 1) return { canceled: true }
+  await deleteFolder(await libraryRoot(), relPath)
+  return { canceled: false }
+})
+
+ipcMain.handle('library:backup', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose where to save the backup', properties: ['openDirectory', 'createDirectory']
+  })
+  if (res.canceled || !res.filePaths[0]) return { canceled: true }
+  const stamp = new Date().toISOString().slice(0, 10)
+  const dest = await backupLibrary(await libraryRoot(), res.filePaths[0], stamp)
+  return { canceled: false, dest }
+})
 
 // ---- Thumbnails -------------------------------------------------------------
 // Render a module in an off-screen window and cache a PNG in .shopdeck/thumbs.

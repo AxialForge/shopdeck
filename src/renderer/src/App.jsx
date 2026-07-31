@@ -162,6 +162,12 @@ export default function App() {
     if (!api || !name) return
     await api.createFolder(folder ? `${folder}/${name}` : name); reload()
   }
+  async function onDeleteModule(m) { if (!api) return; const r = await api.deleteModule(m.id, m.title); if (!r?.canceled) reload() }
+  async function onDeleteFolder() {
+    if (!api || !folder) return
+    const r = await api.deleteFolder(folder)
+    if (!r?.canceled) { setFolder(folder.includes('/') ? folder.slice(0, folder.lastIndexOf('/')) : ''); reload() }
+  }
 
   async function onChangeMode(m) { setSettings((s) => ({ ...s, mode: m })); if (api) await api.setSettings({ mode: m }) }
   const canEdit = settings.mode !== 'readonly'
@@ -193,6 +199,7 @@ export default function App() {
               </SegmentedControl>
               {canEdit && <Button label="New folder" variant="secondary" onClick={() => setNewFolderOpen(true)} />}
               {canEdit && <Button label="Attach folder" variant="secondary" onClick={onImportFolder} />}
+              {canEdit && folder && <Button label="Delete folder" variant="ghost" onClick={onDeleteFolder} />}
               {canEdit && <Button label="Import" variant="primary" onClick={onImport} />}
             </div>
 
@@ -251,6 +258,7 @@ export default function App() {
                           <span className="row-actions">
                             {canEdit && <button className="linkbtn" onClick={(e) => { e.stopPropagation(); setEditing(m) }}>Edit</button>}
                             {m.hasSource && <button className="linkbtn" onClick={(e) => { e.stopPropagation(); api?.showSource(m.id) }}>Source</button>}
+                            {canEdit && <button className="linkbtn danger" onClick={(e) => { e.stopPropagation(); onDeleteModule(m) }}>Delete</button>}
                           </span>
                         </div>
                         <div className="tags">{(m.tags || []).slice(0, 4).map((t) => <Token key={t} label={t} color="default" size="sm" />)}</div>
@@ -401,6 +409,13 @@ function AboutView() {
 }
 
 function SettingsView({ settings, root, onChangeTheme, onChangeMode, onChangeRoot, onReveal, hasApi }) {
+  const [backupMsg, setBackupMsg] = useState('')
+  async function onBackup() {
+    if (!hasApi) return
+    setBackupMsg('Backing up…')
+    const r = await window.shopdeck.backup()
+    setBackupMsg(r?.canceled ? '' : `Backed up to ${r.dest}`)
+  }
   return (
     <div className="settings">
       <h2>Settings</h2>
@@ -423,7 +438,9 @@ function SettingsView({ settings, root, onChangeTheme, onChangeMode, onChangeRoo
         <div className="set-actions">
           <Button label="Change folder…" variant="secondary" onClick={onChangeRoot} />
           <Button label="Open in file browser" variant="ghost" onClick={onReveal} />
+          <Button label="Back up library" variant="ghost" onClick={onBackup} />
         </div>
+        {backupMsg && <div className="muted small" style={{ marginTop: 6 }}>{backupMsg}</div>}
         {!hasApi && <div className="muted small">(Browser preview — file actions work in the desktop app.)</div>}
       </section>
 

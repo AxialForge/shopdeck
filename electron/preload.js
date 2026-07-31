@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('shopdeck', {
   importPaths: (paths, destRel) => ipcRenderer.invoke('module:importPaths', { paths, destRel }),
   getFilePath: (file) => webUtils.getPathForFile(file),
   createFolder: (relPath) => ipcRenderer.invoke('folder:create', { relPath }),
+  deleteModule: (id, title) => ipcRenderer.invoke('module:delete', { id, title }),
+  deleteFolder: (relPath) => ipcRenderer.invoke('folder:delete', { relPath }),
+  backup: () => ipcRenderer.invoke('library:backup'),
   thumb: (id, version) => ipcRenderer.invoke('module:thumb', { id, version }),
   onLibraryChanged: (cb) => {
     const fn = () => cb()

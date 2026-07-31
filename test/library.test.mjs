@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   parseManifest, validateManifest, scanLibrary, resolveModuleFile,
-  setOverride, importFiles, importTree, createFolder
+  setOverride, importFiles, importTree, createFolder,
+  deleteModule, deleteFolder, backupLibrary
 } from '../electron/library.js'
 
 const baseMan = (over = {}) => ({
@@ -154,6 +155,39 @@ test('resolveModuleFile returns the live file for latest, a snapshot for older',
   const old = await resolveModuleFile(root, 'r_1', 1)
   assert.equal(old.version, 1)
   assert.ok(old.indexPath.includes(join('.shopdeck', 'versions', 'r_1', 'v1')))
+})
+
+test('deleteModule removes the file, its snapshots, and its index entry', async () => {
+  const root = await tmpRoot()
+  const file = await writeModule(root, 'M', 'a.html', baseMan({ id: 'del_1' }))
+  await scanLibrary(root)
+  await fs.access(join(root, '.shopdeck', 'versions', 'del_1', 'v1', 'index.html'))
+
+  await deleteModule(root, 'del_1')
+  await assert.rejects(fs.access(file), 'module file is gone')
+  await assert.rejects(fs.access(join(root, '.shopdeck', 'versions', 'del_1')), 'snapshots gone')
+  const d = await scanLibrary(root)
+  assert.equal(d.modules.find((m) => m.id === 'del_1'), undefined)
+})
+
+test('deleteFolder removes a folder and its modules; root .shopdeck is protected', async () => {
+  const root = await tmpRoot()
+  await writeModule(root, 'Junk', 'a.html', baseMan({ id: 'jf_1' }))
+  await scanLibrary(root)
+  await deleteFolder(root, 'Junk')
+  await assert.rejects(fs.access(join(root, 'Junk')))
+  assert.equal(await deleteFolder(root, '.shopdeck'), false)
+  await fs.access(join(root, '.shopdeck')) // still there
+})
+
+test('backupLibrary copies the whole root into a new folder', async () => {
+  const root = await tmpRoot()
+  await writeModule(root, 'M', 'a.html', baseMan({ id: 'bk_1' }))
+  await scanLibrary(root)
+  const destParent = await fs.mkdtemp(join(tmpdir(), 'sd-bak-'))
+  const dest = await backupLibrary(root, destParent, '2026-07-31')
+  await fs.access(join(dest, 'M', 'a.html'))
+  await fs.access(join(dest, '.shopdeck', 'index.json'))
 })
 
 test('createFolder makes a nested folder under the root and blocks traversal', async () => {

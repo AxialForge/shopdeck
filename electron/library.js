@@ -254,3 +254,34 @@ export async function createFolder(root, relPath) {
   await fs.mkdir(join(root, clean), { recursive: true })
   return true
 }
+
+/** Delete a module: its live file (+source), its version snapshots, and index entry. */
+export async function deleteModule(root, id) {
+  const idx = await loadIndex(root)
+  const rec = idx.modules?.[id]
+  if (rec?.lastPath) {
+    const live = join(root, rec.lastPath)
+    const src = await siblingSource(live)
+    try { await fs.rm(live, { force: true }) } catch { /* already gone */ }
+    if (src) { try { await fs.rm(src, { force: true }) } catch { /* ignore */ } }
+  }
+  try { await fs.rm(join(root, HIDDEN, 'versions', id), { recursive: true, force: true }) } catch { /* ignore */ }
+  if (idx.modules) delete idx.modules[id]
+  await saveIndex(root, idx)
+  return true
+}
+
+/** Delete a folder (and everything under it) inside the root. Traversal-guarded. */
+export async function deleteFolder(root, relPath) {
+  const clean = String(relPath || '').replace(/[.]{2,}/g, '').replace(/^[/\\]+/, '')
+  if (!clean || clean === HIDDEN) return false
+  await fs.rm(join(root, clean), { recursive: true, force: true })
+  return true
+}
+
+/** Copy the whole library (including .shopdeck) into a new folder under destParent. */
+export async function backupLibrary(root, destParent, stamp) {
+  const dest = join(destParent, `ShopDeck-Library-Backup${stamp ? '-' + stamp : ''}`)
+  await fs.cp(root, dest, { recursive: true })
+  return dest
+}
