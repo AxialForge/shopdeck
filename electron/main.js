@@ -7,6 +7,14 @@ import XLSX from 'xlsx'
 import { generateTimeline } from './generators/timeline.js'
 import timelineTemplate from './generators/timeline-template.html?raw'
 
+// ---- Crash resilience -------------------------------------------------------
+// A single stray async error in the main process otherwise shows Electron's
+// fatal "A JavaScript error occurred in the main process" dialog and kills the
+// app. Log and keep running so a non-critical failure (e.g. a file watcher on a
+// flaky network share) never takes the whole window down with it.
+process.on('uncaughtException', (err) => { console.error('[main] uncaught exception:', err) })
+process.on('unhandledRejection', (err) => { console.error('[main] unhandled rejection:', err) })
+
 // ---- Settings (userData/settings.json) --------------------------------------
 const DEFAULTS = { libraryRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
@@ -55,10 +63,18 @@ async function startWatch() {
   if (watcher) { try { watcher.close() } catch { /* ignore */ } watcher = null }
   const root = await libraryRoot()
   try {
-    watcher = watch(root, { recursive: true }, (_evt, file) => {
+    const w = watch(root, { recursive: true }, (_evt, file) => {
       if (file && String(file).includes('.shopdeck')) return // our own metadata
       scheduleNotify()
     })
+    // fs.watch can fail ASYNCHRONOUSLY, long after this synchronous setup call.
+    // On Windows a recursive watch over an OneDrive-synced Documents folder
+    // (the default root) or a network share emits an 'error' event —
+    // "UNKNOWN: unknown error, watch" from FSWatcher._handle.onchange. With no
+    // 'error' listener, EventEmitter rethrows it and the whole main process
+    // dies with a fatal dialog. Catch it and degrade to manual refresh.
+    w.on('error', () => { try { w.close() } catch { /* ignore */ } if (watcher === w) watcher = null })
+    watcher = w
   } catch { /* some network shares don't emit events; degrade quietly */ }
 }
 
