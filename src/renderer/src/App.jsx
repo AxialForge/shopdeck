@@ -54,9 +54,13 @@ function buildTree(folders) {
   return root
 }
 
+const SAMPLE_LIBS = [{ id: 'sample', name: 'ShopDeck Library', root: SAMPLE.root }]
+
 export default function App() {
   const [settings, setSettings] = useState({ theme: 'grey', libraryRoot: '', mode: 'editing' })
   const [data, setData] = useState({ root: '', folders: [], modules: [] })
+  const [libraries, setLibraries] = useState(SAMPLE_LIBS)
+  const [activeLibraryId, setActiveLibraryId] = useState('sample')
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('home') // home | library | generator | settings | about
   const [dropping, setDropping] = useState(false)
@@ -66,17 +70,29 @@ export default function App() {
   const [activeTags, setActiveTags] = useState(() => new Set())
   const [editing, setEditing] = useState(null)   // module being edited
   const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [renaming, setRenaming] = useState(null)  // library being renamed
   const [thumbs, setThumbs] = useState({})       // id -> data URL ('' = tried, none)
 
   const applyTheme = (t) => { document.documentElement.dataset.theme = t || 'grey' }
 
   const reload = useCallback(async () => {
     setLoading(true)
-    const s = api ? await api.getSettings() : { theme: 'grey', libraryRoot: SAMPLE.root, mode: 'editing' }
-    applyTheme(s.theme)
-    setSettings(s)
-    setData(api ? await api.scan() : SAMPLE)
-    setLoading(false)
+    try {
+      const s = api ? await api.getSettings() : { theme: 'grey', libraryRoot: SAMPLE.root, mode: 'editing' }
+      applyTheme(s.theme)
+      setSettings(s)
+      if (api) {
+        const st = await api.libraries.list()
+        setLibraries(st.libraries || [])
+        setActiveLibraryId(st.activeLibraryId || null)
+      }
+      setData(api ? await api.scan() : SAMPLE)
+    } catch (err) {
+      // Never leave the UI stuck on "Loading…" — surface the failure instead.
+      setData((d) => ({ ...d, error: String((err && err.message) || err) }))
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { reload() }, [reload])
@@ -156,6 +172,22 @@ export default function App() {
   }
   async function onChangeTheme(t) { applyTheme(t); setSettings((s) => ({ ...s, theme: t })); if (api) await api.setSettings({ theme: t }) }
   async function onChangeRoot() { if (!api) return; const r = await api.chooseRoot(); if (!r?.canceled) reload() }
+
+  // ---- Libraries -------------------------------------------------------------
+  async function onAddLibrary() { if (!api) return; const r = await api.libraries.add(); if (!r?.canceled) reload() }
+  async function onSwitchLibrary(id) {
+    if (!api || id === activeLibraryId) return
+    setFolder(''); setActiveTags(new Set()); setQuery('')  // filters are per-library
+    await api.libraries.switch(id); reload()
+  }
+  async function onRenameLibrary(id, name) {
+    setRenaming(null)
+    if (!api || !name) return
+    const st = await api.libraries.rename(id, name)
+    setLibraries(st.libraries || []); setActiveLibraryId(st.activeLibraryId || null)
+  }
+  async function onRemoveLibrary(id) { if (!api) return; await api.libraries.remove(id); reload() }
+  function onRevealLibrary(id) { api?.libraries.reveal(id) }
   async function saveEdit(id, title, tags) { if (api) await api.setMeta(id, { title, tags }); setEditing(null); reload() }
   async function createFolderNow(name) {
     setNewFolderOpen(false)
@@ -177,6 +209,13 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <div className="brand"><span className="mark">S</span> ShopDeck</div>
+        {libraries.length > 0 && (
+          <label className="lib-switch" title="Active library">
+            <select value={activeLibraryId || ''} onChange={(e) => onSwitchLibrary(e.target.value)}>
+              {libraries.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </label>
+        )}
         <nav className="tabs">
           {TABS.map((t) => (
             <button key={t.id} className={'tab' + (view === t.id ? ' on' : '')} onClick={() => setView(t.id)}>{t.label}</button>
@@ -184,6 +223,15 @@ export default function App() {
         </nav>
         <span className="count">{data.modules.length} module{data.modules.length === 1 ? '' : 's'}</span>
       </div>
+
+      {data.error && (
+        <div className="banner err-banner">
+          <span className="banner-ic">!</span>
+          <span className="grow ell" title={data.error}>{data.error}</span>
+          <Button label="Retry" variant="secondary" onClick={reload} />
+          <Button label="Manage libraries" variant="ghost" onClick={() => setView('settings')} />
+        </div>
+      )}
 
       {view === 'library' && (
           <>
@@ -233,9 +281,13 @@ export default function App() {
 
                 {loading && <div className="empty">Loading…</div>}
                 {!loading && shown.length === 0 && (
-                  <div className="empty">{data.modules.length === 0
-                    ? 'Library is empty. Click Import to add a module (or run npm run seed).'
-                    : 'Nothing matches your filters.'}</div>
+                  <div className="empty">
+                    {data.modules.length > 0
+                      ? 'Nothing matches your filters.'
+                      : data.htmlCount > 0
+                        ? <>Found {data.htmlCount} HTML file{data.htmlCount === 1 ? '' : 's'} here, but {data.htmlCount === 1 ? 'it' : 'none'} could be loaded.{data.skipped?.[0] ? <><br />First: <code>{data.skipped[0].file}</code> — {data.skipped[0].reason}.</> : ''}</>
+                        : 'Library is empty. Click Import to add a module (or run npm run seed).'}
+                  </div>
                 )}
                 {!loading && shown.length > 0 && (
                   <div className="grid">
@@ -244,7 +296,7 @@ export default function App() {
                         <div className="card-top">
                           <div className="grow">
                             <div className="part">{m.fields?.part || m.title}</div>
-                            <div className="muted">{m.type.replace(/-/g, ' ')}{m.edited ? ' · edited' : ''}</div>
+                            <div className="muted">{m.type.replace(/-/g, ' ')}{m.edited ? ' · edited' : ''}{m.inferred ? ' · no manifest' : ''}</div>
                           </div>
                           <Badge label={`v${m.latest}`} variant="neutral" />
                         </div>
@@ -283,8 +335,12 @@ export default function App() {
 
       {view === 'home' && <HomeView data={data} settings={settings} go={setView} onOpenRoot={() => api?.revealRoot()} />}
       {view === 'generator' && <GeneratorView go={setView} onGenerated={reload} />}
-      {view === 'settings' && <SettingsView settings={settings} root={data.root} onChangeTheme={onChangeTheme}
-        onChangeMode={onChangeMode} onChangeRoot={onChangeRoot} onReveal={() => api?.revealRoot()} hasApi={!!api} />}
+      {view === 'settings' && <SettingsView settings={settings} root={data.root}
+        libraries={libraries} activeLibraryId={activeLibraryId}
+        onChangeTheme={onChangeTheme} onChangeMode={onChangeMode} onChangeRoot={onChangeRoot}
+        onReveal={() => api?.revealRoot()} hasApi={!!api}
+        onAddLibrary={onAddLibrary} onSwitchLibrary={onSwitchLibrary}
+        onRenameLibrary={(lib) => setRenaming(lib)} onRemoveLibrary={onRemoveLibrary} onRevealLibrary={onRevealLibrary} />}
       {view === 'about' && <AboutView />}
 
       <div className="footer">
@@ -296,6 +352,10 @@ export default function App() {
       {editing && <EditModal module={editing} onCancel={() => setEditing(null)} onSave={saveEdit} />}
       {newFolderOpen && <NameModal title="New folder" placeholder="Folder name"
         onCancel={() => setNewFolderOpen(false)} onSave={createFolderNow} note={folder ? `Inside: ${folder}` : 'At the library root'} />}
+      {renaming && <NameModal title="Rename library" placeholder="Library name"
+        initial={renaming.name} actionLabel="Save" sanitize={false}
+        note={`Just the label shown in ShopDeck — the folder on disk (${renaming.root}) is not renamed.`}
+        onCancel={() => setRenaming(null)} onSave={(name) => onRenameLibrary(renaming.id, name)} />}
     </div>
   )
 }
@@ -336,8 +396,9 @@ function EditModal({ module, onCancel, onSave }) {
   )
 }
 
-function NameModal({ title, placeholder, note, onCancel, onSave }) {
-  const [name, setName] = useState('')
+function NameModal({ title, placeholder, note, initial = '', actionLabel = 'Create', sanitize = true, onCancel, onSave }) {
+  const [name, setName] = useState(initial)
+  const submit = () => { const v = name.trim(); onSave(sanitize ? v.replace(/[\\/]/g, '-') : v) }
   return (
     <div className="overlay" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -348,7 +409,7 @@ function NameModal({ title, placeholder, note, onCancel, onSave }) {
         <div className="modal-foot">
           <div className="spacer" />
           <Button label="Cancel" variant="secondary" onClick={onCancel} />
-          <Button label="Create" variant="primary" onClick={() => onSave(name.trim().replace(/[\\/]/g, '-'))} />
+          <Button label={actionLabel} variant="primary" onClick={submit} />
         </div>
       </div>
     </div>
@@ -434,7 +495,46 @@ function AboutView() {
   )
 }
 
-function SettingsView({ settings, root, onChangeTheme, onChangeMode, onChangeRoot, onReveal, hasApi }) {
+function LibrariesSection({ libraries, activeLibraryId, hasApi, onAdd, onSwitch, onRename, onRemove, onReveal }) {
+  const single = libraries.length <= 1
+  return (
+    <section className="set-sec">
+      <div className="set-title">Libraries</div>
+      <div className="muted small">Keep several libraries (local folders or network shares) and switch between
+        them from the bar up top. Renaming changes only the label shown here — the folder on disk is never
+        touched. Removing a library just unlinks it from ShopDeck; your files stay on disk.</div>
+      <div className="lib-list">
+        {libraries.map((l) => {
+          const active = l.id === activeLibraryId
+          return (
+            <div key={l.id} className={'lib-row' + (active ? ' active' : '')}>
+              <div className="grow">
+                <div className="lib-name">
+                  <span className="ell">{l.name}</span>
+                  {active && <Badge label="Active" variant="success" />}
+                </div>
+                <div className="muted small ell" title={l.root}>{l.root}</div>
+              </div>
+              <div className="lib-row-actions">
+                {!active && <button className="linkbtn" onClick={() => onSwitch(l.id)}>Use</button>}
+                <button className="linkbtn" onClick={() => onRename(l)}>Rename</button>
+                <button className="linkbtn" onClick={() => onReveal(l.id)}>Reveal</button>
+                {!single && <button className="linkbtn danger" onClick={() => onRemove(l.id)}>Remove</button>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="set-actions">
+        <Button label="Add library…" variant="secondary" onClick={onAdd} />
+      </div>
+      {!hasApi && <div className="muted small">(Browser preview — library management works in the desktop app.)</div>}
+    </section>
+  )
+}
+
+function SettingsView({ settings, root, libraries, activeLibraryId, onChangeTheme, onChangeMode, onChangeRoot,
+  onReveal, hasApi, onAddLibrary, onSwitchLibrary, onRenameLibrary, onRemoveLibrary, onRevealLibrary }) {
   const [backupMsg, setBackupMsg] = useState('')
   async function onBackup() {
     if (!hasApi) return
@@ -457,9 +557,13 @@ function SettingsView({ settings, root, onChangeTheme, onChangeMode, onChangeRoo
         </div>
       </section>
 
+      <LibrariesSection libraries={libraries} activeLibraryId={activeLibraryId} hasApi={hasApi}
+        onAdd={onAddLibrary} onSwitch={onSwitchLibrary} onRename={onRenameLibrary}
+        onRemove={onRemoveLibrary} onReveal={onRevealLibrary} />
+
       <section className="set-sec">
-        <div className="set-title">Library folder</div>
-        <div className="muted small">The selected folder's structure is the organization. The app only reads and writes inside it.</div>
+        <div className="set-title">Active library folder</div>
+        <div className="muted small">The active library's folder structure is the organization. The app only reads and writes inside it.</div>
         <div className="rootline"><code>{root || settings.libraryRoot || '—'}</code></div>
         <div className="set-actions">
           <Button label="Change folder…" variant="secondary" onClick={onChangeRoot} />

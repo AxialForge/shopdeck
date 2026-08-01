@@ -15,9 +15,14 @@ plain files so a shared/network deployment is a later config change.
   packages. Storage is plain files + a JSON index; the whole stack is pure JS.
 - **Modules stay untouched.** ShopDeck displays a module's HTML byte-for-byte in
   its own window. Astryx/React dress only the wrapper chrome, never the module.
-- **The manifest is the contract.** ShopDeck reads only the embedded
-  `module-manifest` block. See `MODULE-SPEC.md` in the sibling
-  `Part timeline plus timeline` project for the authoritative field reference.
+- **The manifest is the contract — but it's optional.** ShopDeck prefers the
+  embedded `module-manifest` block; when a self-contained HTML has none (e.g. a
+  timeline exported by the standalone tool), `scanLibrary` **infers** one from the
+  file — its `<title>`, filename, and, for tool-swap timelines, the embedded
+  `const DATA` object (part, events, date range, operation tags). Inferred modules
+  are flagged `inferred: true` (the card shows "· no manifest"). Files with a real
+  manifest stay authoritative. See `MODULE-SPEC.md` in the sibling
+  `Part timeline plus timeline` project for the field reference.
 - Git identity is **AxialForge** (global). Check `git config --local --get-regexp '^user\.'`
   before the first commit — a stale local override has mis-attributed commits before.
 

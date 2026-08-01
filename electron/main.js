@@ -2,13 +2,24 @@ import { app, BrowserWindow, ipcMain, dialog, shell, screen } from 'electron'
 import { join, basename } from 'node:path'
 import { promises as fs, watch } from 'node:fs'
 import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions, deleteModule, deleteFolder, backupLibrary } from './library.js'
+import { normalizeLibraries, activeLibrary as pickActive, addLibrary, renameLibrary, removeLibrary, setActive, setLibraryRoot } from './libraries.js'
 import * as updater from './updater.js'
 import XLSX from 'xlsx'
 import { generateTimeline } from './generators/timeline.js'
 import timelineTemplate from './generators/timeline-template.html?raw'
 
+// ---- Crash resilience -------------------------------------------------------
+// A single stray async error in the main process otherwise shows Electron's
+// fatal "A JavaScript error occurred in the main process" dialog and kills the
+// app. Log and keep running so a non-critical failure (e.g. a file watcher on a
+// flaky network share) never takes the whole window down with it.
+process.on('uncaughtException', (err) => { console.error('[main] uncaught exception:', err) })
+process.on('unhandledRejection', (err) => { console.error('[main] unhandled rejection:', err) })
+
 // ---- Settings (userData/settings.json) --------------------------------------
-const DEFAULTS = { libraryRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
+// `libraries` is the multi-library list (see electron/libraries.js); `libraryRoot`
+// is the legacy single-root field kept only so old installs migrate cleanly.
+const DEFAULTS = { libraries: null, activeLibraryId: null, libraryRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const defaultRoot = () => join(app.getPath('documents'), 'ShopDeck Library')
 
@@ -21,12 +32,45 @@ async function saveSettings(patch) {
   await fs.writeFile(settingsFile(), JSON.stringify(next, null, 2), 'utf8')
   return next
 }
-async function libraryRoot() {
+
+// The normalized { libraries, activeLibraryId } view, migrating a legacy single
+// libraryRoot on first read and persisting the result so it only happens once.
+async function libraryState() {
   const s = await loadSettings()
-  const root = s.libraryRoot || defaultRoot()
-  await fs.mkdir(root, { recursive: true })
-  if (!s.libraryRoot) await saveSettings({ libraryRoot: root }) // persist the resolved default
-  return root
+  const st = normalizeLibraries(s, defaultRoot())
+  if (st.changed) await saveSettings({ libraries: st.libraries, activeLibraryId: st.activeLibraryId })
+  return { libraries: st.libraries, activeLibraryId: st.activeLibraryId }
+}
+async function persistState(st) {
+  await saveSettings({ libraries: st.libraries, activeLibraryId: st.activeLibraryId })
+  return st
+}
+async function libraryRoot() {
+  const lib = pickActive(await libraryState())
+  // Best-effort ensure the folder exists. Never throw here: an offline share or
+  // a deleted folder is surfaced by scan (as a soft error) instead of taking
+  // down whichever IPC handler happened to call this first.
+  try { await fs.mkdir(lib.root, { recursive: true }) } catch { /* surfaced by scan */ }
+  return lib.root
+}
+
+// Turn a raw fs error from an unreachable/missing library into a short, plain
+// message the renderer can show — the graceful-degradation sibling of the
+// watcher fix (a network-share failure must not brick the app).
+function friendlyRootError(err) {
+  const msg = String((err && err.message) || err || '')
+  if (/ENOENT|no such file/i.test(msg)) return 'The library folder could not be found — it may have been moved or renamed, or a network share is offline.'
+  if (/EPERM|EACCES|permission denied/i.test(msg)) return "ShopDeck doesn't have permission to read this library folder."
+  if (/UNKNOWN|EBUSY|ENETUNREACH|ETIMEDOUT|EHOSTDOWN|EHOSTUNREACH|ENXIO/i.test(msg)) return 'The library folder is unavailable — a network share may be disconnected.'
+  return 'The library could not be opened: ' + (msg.split('\n')[0].slice(0, 160) || 'unknown error')
+}
+
+// Scan the active library, degrading to a soft error object (never a rejection)
+// so the renderer can render a retry banner instead of hanging on "Loading…".
+async function scanActive() {
+  const lib = pickActive(await libraryState())
+  try { return { ...(await scanLibrary(lib.root)), library: lib } }
+  catch (err) { return { root: lib.root, folders: [], modules: [], library: lib, error: friendlyRootError(err) } }
 }
 
 // ---- Windows ----------------------------------------------------------------
@@ -55,10 +99,18 @@ async function startWatch() {
   if (watcher) { try { watcher.close() } catch { /* ignore */ } watcher = null }
   const root = await libraryRoot()
   try {
-    watcher = watch(root, { recursive: true }, (_evt, file) => {
+    const w = watch(root, { recursive: true }, (_evt, file) => {
       if (file && String(file).includes('.shopdeck')) return // our own metadata
       scheduleNotify()
     })
+    // fs.watch can fail ASYNCHRONOUSLY, long after this synchronous setup call.
+    // On Windows a recursive watch over an OneDrive-synced Documents folder
+    // (the default root) or a network share emits an 'error' event —
+    // "UNKNOWN: unknown error, watch" from FSWatcher._handle.onchange. With no
+    // 'error' listener, EventEmitter rethrows it and the whole main process
+    // dies with a fatal dialog. Catch it and degrade to manual refresh.
+    w.on('error', () => { try { w.close() } catch { /* ignore */ } if (watcher === w) watcher = null })
+    watcher = w
   } catch { /* some network shares don't emit events; degrade quietly */ }
 }
 
@@ -98,8 +150,9 @@ function openModuleWindow({ indexPath, title, version }) {
 ipcMain.handle('settings:get', () => loadSettings())
 ipcMain.handle('settings:set', (_e, patch) => saveSettings(patch || {}))
 
-ipcMain.handle('library:scan', async () => scanLibrary(await libraryRoot()))
+ipcMain.handle('library:scan', () => scanActive())
 
+// Change the folder the ACTIVE library points at (multi-library repoint).
 ipcMain.handle('library:chooseRoot', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: 'Choose library folder (local or network share)',
@@ -107,9 +160,45 @@ ipcMain.handle('library:chooseRoot', async () => {
   })
   if (res.canceled || !res.filePaths[0]) return { canceled: true }
   const root = res.filePaths[0]
-  await saveSettings({ libraryRoot: root })
+  await persistState(setLibraryRoot(await libraryState(), root))
   startWatch()
-  return { canceled: false, root, ...(await scanLibrary(root)) }
+  return { canceled: false, root, ...(await scanActive()) }
+})
+
+// ---- Libraries (multiple named library roots) -------------------------------
+ipcMain.handle('libraries:list', () => libraryState())
+
+ipcMain.handle('libraries:add', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Add a library folder (local or network share)',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (res.canceled || !res.filePaths[0]) return { canceled: true }
+  const next = await persistState(addLibrary(await libraryState(), { root: res.filePaths[0] }))
+  startWatch()
+  return { canceled: false, ...next }
+})
+
+ipcMain.handle('libraries:rename', async (_e, { id, name }) =>
+  persistState(renameLibrary(await libraryState(), id, name)))
+
+ipcMain.handle('libraries:remove', async (_e, { id }) => {
+  const next = await persistState(removeLibrary(await libraryState(), id))
+  startWatch()
+  return next
+})
+
+ipcMain.handle('libraries:switch', async (_e, { id }) => {
+  const next = await persistState(setActive(await libraryState(), id))
+  startWatch()
+  return next
+})
+
+ipcMain.handle('libraries:reveal', async (_e, { id }) => {
+  const st = await libraryState()
+  const lib = st.libraries.find((l) => l.id === id)
+  if (lib) await shell.openPath(lib.root)
+  return true
 })
 
 ipcMain.handle('library:reveal', async () => { await shell.openPath(await libraryRoot()); return true })
