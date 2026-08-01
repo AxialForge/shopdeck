@@ -27,7 +27,11 @@ The tab row at the top switches between **Home** (a quick dashboard), **Library*
 (your modules), **Generator** (your generator plug-in tools), **Settings**,
 and **About**.
 
+![The Home tab: a welcome, module/folder counts, the current theme, and quick links into the library and generators.](img/home.png)
+
 ## The library view
+
+![The library: a folder tree and tag filters on the left, a card grid with previews and version badges, and the search/sort toolbar up top.](img/library.png)
 
 - **Folder tree** (left) — mirrors the folders under your library root. Click a
   folder to show its modules (and everything nested under it). Click **All** to
@@ -59,6 +63,8 @@ The library window stays as you left it.
 
 These stack — e.g. *Tooling ▸ Timelines* + tag `blocker` + search `147`.
 
+![The library sorted by Swaps, biggest first — the same grid re-ordered by the sort control.](img/sort.png)
+
 ## Sharing a library with a team
 
 Point the library folder at a network share and everyone reads one library. If
@@ -84,6 +90,8 @@ one in history.
 ## Editing title &amp; tags
 
 Click **Edit** on a card to rename the module or change its tags. Saved instantly.
+
+![The Edit module dialog: a title field and a comma/space-separated tags field, noting that edits are stored in the index and the file isn't modified.](img/tagging.png)
 
 - Edits are stored in ShopDeck's index — **the module file is never modified**.
 - **Reset to file** clears your edits and reverts to the module's own title/tags.
@@ -122,6 +130,8 @@ The **Generator tab** hosts *generator tools* — self-contained HTML files that
 source data into modules. They're your own plug-ins, not built into the app, so
 private or work-specific generators stay on your machine.
 
+![The Generator tab: an install drop zone with Add generator / Open folder, and a card per installed tool showing what it accepts and where it saves.](img/generator.png)
+
 - **Add one:** click **Add generator…** and pick its `.html`, or drag the file onto
   the tab, or click **Open generators folder** and drop it in. It appears as a card.
 - **Use one:** click **Open**. The tool opens in its own window — drag input files
@@ -150,10 +160,15 @@ its own — only when you click.
 
 ## Settings summary
 
+![The Settings tab: Mode, Search inside modules, Shared library, Libraries, folder locations, and Theme.](img/settings.png)
+
 | Setting | What it does |
 |---------|--------------|
 | **Mode** | Editing or Read-only (hides import/edit/new-folder). |
+| **Search inside modules** | Also search text *inside* every module, not just title/tags. |
+| **Shared library** | Lock + merge the index so several people can edit one shared library safely. |
 | **Library folder** | Where your library lives — a local folder or a network share. Change or open it here. |
+| **Generators folder** | Where your generator plug-in tools live. |
 | **Theme** | Light / Grey / Black. |
 | **Updates** | Manual check / download / install; shows the current version. |
 

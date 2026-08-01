@@ -404,9 +404,9 @@ function EditModal({ module, onCancel, onSave }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">Edit module</div>
         <label className="fld"><span>Title</span>
-          <TextInput label="Title" value={title} onChange={setTitle} /></label>
+          <TextInput value={title} onChange={setTitle} /></label>
         <label className="fld"><span>Tags (comma or space separated)</span>
-          <TextInput label="Tags" value={tags} onChange={setTags} placeholder="blocker finish trim" /></label>
+          <TextInput value={tags} onChange={setTags} placeholder="blocker finish trim" /></label>
         <div className="muted small">Saved in the library index — the module file is not modified.</div>
         <div className="modal-foot">
           <Button label="Reset to file" variant="ghost" onClick={() => onSave(module.id, '', [])} />
@@ -428,7 +428,7 @@ function NameModal({ title, placeholder, note, initial = '', actionLabel = 'Crea
         <div className="modal-h">{title}</div>
         {note && <div className="muted small">{note}</div>}
         <label className="fld"><span>Name</span>
-          <TextInput label="Name" value={name} onChange={setName} placeholder={placeholder} /></label>
+          <TextInput value={name} onChange={setName} placeholder={placeholder} /></label>
         <div className="modal-foot">
           <div className="spacer" />
           <Button label="Cancel" variant="secondary" onClick={onCancel} />
