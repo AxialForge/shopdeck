@@ -24,7 +24,7 @@ sources) into folders under that root. To use a shared library instead, go to
 ## Getting around
 
 The tab row at the top switches between **Home** (a quick dashboard), **Library**
-(your modules), **Generator** (where module generators will live), **Settings**,
+(your modules), **Generator** (your generator plug-in tools), **Settings**,
 and **About**.
 
 ## The library view
@@ -105,13 +105,23 @@ coworker on the shared drive — ShopDeck notices and updates the view without a
 restart. (On some network shares that don't emit change events, reopen or switch
 folders to force a re-scan.)
 
-## Generating a timeline
+## Generators (plug-ins)
 
-**Generator tab → Generate from spreadsheet.** Pick the standard timeline workbook
-(a `Swap Log` sheet of events plus a `By Position` sheet of tool positions).
-ShopDeck builds a tool-swap timeline module in the **exact current format** and adds
-it to your library under `Tooling/Timelines`, with the spreadsheet attached as its
-source. If a timeline for that part already exists, it lands as a new version.
+The **Generator tab** hosts *generator tools* — self-contained HTML files that turn
+source data into modules. They're your own plug-ins, not built into the app, so
+private or work-specific generators stay on your machine.
+
+- **Add one:** click **Add generator…** and pick its `.html`, or drag the file onto
+  the tab, or click **Open generators folder** and drop it in. It appears as a card.
+- **Use one:** click **Open**. The tool opens in its own window — drag input files
+  onto it (or use its file picker), and it saves finished modules straight into your
+  active library, then the library refreshes. Most tools accept several files at
+  once for **bulk conversion**.
+- **Build one:** start from `templates/generator-template.html` in the repo and read
+  [GENERATOR-SPEC.md](GENERATOR-SPEC.md). A generator is just one HTML file that
+  reads an input and hands ShopDeck the finished module(s) via `emit()`.
+
+The generators folder defaults to `Documents\ShopDeck Generators`.
 
 ## Themes
 

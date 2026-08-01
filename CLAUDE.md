@@ -1,12 +1,18 @@
 # ShopDeck
 
-A desktop **library for interactive work-item modules**. A "module" is one
-self-contained HTML file (inline CSS/JS/data) carrying a `module-manifest` JSON
-block; ShopDeck stores, organizes, searches, version-tracks, and opens them at
-full fidelity. The first module type is tool-swap timelines (forged-part die-set
-removal history), but the wrapper is domain-neutral — checklists, reports, and
-other work items plug in the same way. Single-user desktop now; the library is
-plain files so a shared/network deployment is a later config change.
+A desktop **home for interactive HTML files built with AI agents**. A "module" is
+one self-contained HTML file (inline CSS/JS/data) carrying a `module-manifest`
+JSON block; ShopDeck stores, organizes, searches, version-tracks, and opens them
+at full fidelity. It is deliberately domain-neutral — dashboards, trackers,
+reports, checklists, and (as one work example) tool-swap timelines all plug in the
+same way. Single-user desktop now; the library is plain files so a shared/network
+deployment is a later config change.
+
+New modules can also be produced by **generator plug-ins**: self-contained HTML
+tools kept in the user's *ShopDeck Generators* folder (NOT bundled), listed on the
+Generator tab, run sandboxed behind the `window.shopdeckGenerator` bridge, emitting
+modules into the active library. See `docs/GENERATOR-SPEC.md`. The forging timeline
+generator is intentionally a *local* plug-in, not in this repo.
 
 ## Non-negotiables
 
@@ -42,6 +48,8 @@ npm run preview   # run the built app
 | `electron/main.js` | Electron main process: window, IPC handlers, opens module windows. |
 | `electron/preload.js` | `contextBridge` — exposes `window.shopdeck` (list/open/import/showSource/libraryDir). Only surface the renderer can touch. |
 | `electron/library.js` | **Pure-Node** storage layer (no Electron import) — manifest parse/validate, `scanLibrary`, `resolveModuleFile`, `setOverride`, `importFiles`, `createFolder`. Shared by main and seed. |
+| `electron/generators-host.js` | **Pure-Node** generator host — `scanGenerators`, `parseGenerator`, `writeOutputs` (path-escape-safe). Lists plug-in tools + writes their emitted modules into the library. |
+| `electron/generator-preload.js` | `contextBridge` for generator-tool windows — exposes `window.shopdeckGenerator` (context/pickFiles/emit/close). |
 | `src/renderer/` | React + Astryx UI (the chrome). `App.jsx` = library view + settings + edit/new-folder modals. |
 | `scripts/seed.mjs` | Copies the sample timelines into the default root under `Tooling/Timelines`. |
 | `electron.vite.config.mjs` | electron-vite config; wires the `electron/` + `src/renderer/` layout. |

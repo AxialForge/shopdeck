@@ -78,8 +78,10 @@ Design principles:
 - **Local or network-share library** — point the root at a shared drive so a whole
   team reads one library.
 - **Three themes** — light, grey, black (AxialForge royal-blue accent).
-- **Timeline generator** — turn the standard spreadsheet into a tool-swap timeline
-  module in the exact current format, added straight to your library.
+- **Generator plug-ins** — add your own self-contained HTML tools that turn source
+  files into modules (drag-drop, bulk convert), emitted straight into your library.
+  Tools live in a folder you own, so private/work generators never ship with the
+  app. See [docs/GENERATOR-SPEC.md](docs/GENERATOR-SPEC.md).
 - **Manual updater** — a one-click *Check for updates* against GitHub Releases;
   nothing phones home on its own.
 
@@ -224,6 +226,7 @@ reads). Details in [docs/BUILDING.md](docs/BUILDING.md).
 |-----|--------------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the app is built: processes, storage model, theming. |
 | [docs/MODULE-SPEC.md](docs/MODULE-SPEC.md) | The module manifest contract (schema v1) and how to author a new type. |
+| [docs/GENERATOR-SPEC.md](docs/GENERATOR-SPEC.md) | The generator plug-in contract: build a tool that turns source files into modules. |
 | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | End-user walkthrough of every feature. |
 | [docs/BUILDING.md](docs/BUILDING.md) | Dev setup, building the installer, and the release process. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Conventions and how to contribute. |

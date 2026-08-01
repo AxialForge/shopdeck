@@ -1,6 +1,18 @@
 # Changelog
 
-## [1.0.0] — 2026-07-30
+## [Unreleased]
+### Changed
+- **Generators are now plug-ins.** The Generator tab is a plug-in area: it lists
+  self-contained HTML **generator tools** kept in a *ShopDeck Generators* folder you
+  own (Settings-configurable), opens each in a sandboxed window behind a small
+  `window.shopdeckGenerator` bridge, and writes the modules a tool emits into the
+  active library. Adds **Add generator…**, drag-drop install, and per-tool bulk
+  conversion. Authoring template (`templates/generator-template.html`) and contract
+  (`docs/GENERATOR-SPEC.md`) included.
+### Removed
+- The built-in tool-swap **timeline** generator no longer ships with the app (it's
+  work-specific). It now runs as a local generator plug-in instead, so the public
+  release carries only the framework and a blank template.
 ### Added
 - Timeline generator (Generator tab): pick the standard spreadsheet (a "Swap Log"
   + "By Position" workbook) and produce a tool-swap timeline module in the **exact

@@ -584,6 +584,29 @@ function LibrariesSection({ libraries, activeLibraryId, hasApi, onAdd, onSwitch,
   )
 }
 
+function GeneratorsSection({ hasApi }) {
+  const [dir, setDir] = useState('')
+  useEffect(() => { if (api) api.generators.list().then((r) => setDir(r?.dir || '')) }, [])
+  async function onChange() {
+    if (!api) return
+    const r = await api.generators.chooseRoot()
+    if (!r?.canceled) setDir(r.dir)
+  }
+  return (
+    <section className="set-sec">
+      <div className="set-title">Generators folder</div>
+      <div className="muted small">Where your generator plug-in tools live. Point it at a shared drive to
+        share tools with a team. The app only reads generators from here.</div>
+      <div className="rootline"><code>{dir || 'Documents\\ShopDeck Generators'}</code></div>
+      <div className="set-actions">
+        <Button label="Change folder…" variant="secondary" onClick={onChange} />
+        <Button label="Open in file browser" variant="ghost" onClick={() => api && api.generators.reveal()} />
+      </div>
+      {!hasApi && <div className="muted small">(Browser preview — file actions work in the desktop app.)</div>}
+    </section>
+  )
+}
+
 function SettingsView({ settings, root, libraries, activeLibraryId, onChangeTheme, onChangeMode, onChangeRoot,
   onReveal, hasApi, onAddLibrary, onSwitchLibrary, onRenameLibrary, onRemoveLibrary, onRevealLibrary }) {
   const [backupMsg, setBackupMsg] = useState('')
@@ -624,6 +647,8 @@ function SettingsView({ settings, root, libraries, activeLibraryId, onChangeThem
         {backupMsg && <div className="muted small" style={{ marginTop: 6 }}>{backupMsg}</div>}
         {!hasApi && <div className="muted small">(Browser preview — file actions work in the desktop app.)</div>}
       </section>
+
+      <GeneratorsSection hasApi={hasApi} />
 
       <section className="set-sec">
         <div className="set-title">Theme</div>
