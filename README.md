@@ -17,6 +17,8 @@ small manifest is a "module" it can hold — no matter what it does or what buil
 it. A manufacturing tool-swap timeline appears in the sample data as *one example*
 of a module; ShopDeck itself knows nothing about timelines.
 
+![The ShopDeck library: a nested folder tree, tag filters, and a card grid of modules with rendered thumbnails and version history.](docs/img/library.png)
+
 ---
 
 ## Contents
@@ -84,6 +86,8 @@ Design principles:
   app. See [docs/GENERATOR-SPEC.md](docs/GENERATOR-SPEC.md).
 - **Manual updater** — a one-click *Check for updates* against GitHub Releases;
   nothing phones home on its own.
+
+![The Generator tab: a plug-in area listing self-contained generator tools, with an install drop zone and per-tool cards.](docs/img/generator.png)
 
 ## How it works
 

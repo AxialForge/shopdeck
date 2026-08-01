@@ -436,6 +436,13 @@ function HomeView({ data, settings, go, onOpenRoot }) {
   )
 }
 
+// Browser-preview sample (no Electron), mirroring SAMPLE for the library — so the
+// Generator tab renders representatively without a live generators folder.
+const SAMPLE_GENERATORS = [
+  { file: 'note-to-module.html', name: 'Note → Module', inferred: false, accepts: ['.md', '.txt'], folder: 'Generated', description: 'Wrap a text or markdown file into a simple module.' },
+  { file: 'report-builder.html', name: 'CSV → Report', inferred: false, accepts: ['.csv'], folder: 'Reports', description: 'Turn a data export into a formatted, self-contained report module.' }
+]
+
 function GeneratorView() {
   const [dir, setDir] = useState('')
   const [gens, setGens] = useState([])
@@ -444,7 +451,7 @@ function GeneratorView() {
   const [msg, setMsg] = useState('')
 
   const load = useCallback(async () => {
-    if (!api) { setLoaded(true); return }
+    if (!api) { setDir('Documents\\ShopDeck Generators'); setGens(SAMPLE_GENERATORS); setLoaded(true); return }
     const r = await api.generators.list()
     setDir(r?.dir || ''); setGens(r?.generators || []); setLoaded(true)
   }, [])
