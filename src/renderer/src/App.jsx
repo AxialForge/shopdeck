@@ -42,7 +42,7 @@ const GITHUB = 'https://github.com/AxialForge/shopdeck'
 const openExternal = (url) => (api ? api.openExternal(url) : window.open(url, '_blank'))
 
 function buildTree(folders) {
-  const root = { name: 'All', path: '', children: new Map() }
+  const root = { name: 'Library', path: '', children: new Map() }
   for (const f of folders) {
     let node = root, acc = ''
     for (const part of f.split('/')) {
@@ -67,6 +67,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('updated')
   const [folder, setFolder] = useState('')
+  const [flatAll, setFlatAll] = useState(false)   // true = "All modules" flat view; false = browse `folder`
   const [activeTags, setActiveTags] = useState(() => new Set())
   const [editing, setEditing] = useState(null)   // module being edited
   const [newFolderOpen, setNewFolderOpen] = useState(false)
@@ -156,7 +157,9 @@ export default function App() {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     let list = data.modules.filter((m) => {
-      if (folder && !(m.folder === folder || m.folder.startsWith(folder + '/'))) return false
+      // "All" = every module (flat, searchable); browse = only modules that live
+      // directly in the current folder (its subfolders show as cards instead).
+      if (!flatAll && m.folder !== folder) return false
       if (activeTags.size && !m.tags.some((t) => activeTags.has(t))) return false
       if (!q) return true
       const meta = [m.title, m.id, m.description, m.fields?.part, ...(m.tags || [])]
@@ -170,20 +173,34 @@ export default function App() {
       sort === 'title' ? a.title.localeCompare(b.title)
         : sort === 'swaps' ? (b.fields?.events || 0) - (a.fields?.events || 0)
           : upd(b).localeCompare(upd(a)))
-  }, [data.modules, query, sort, folder, activeTags, settings.contentSearch, contentHits])
+  }, [data.modules, query, sort, folder, flatAll, activeTags, settings.contentSearch, contentHits])
+
+  // Folder cards for the current browse level: the immediate subfolders of
+  // `folder` (file-explorer drill-down). Hidden in the flat "All" view.
+  const subfolders = useMemo(() => {
+    if (flatAll) return []
+    const parentOf = (f) => f.split('/').slice(0, -1).join('/')
+    return data.folders
+      .filter((f) => parentOf(f) === folder)
+      .sort((a, b) => a.localeCompare(b))
+      .map((f) => ({ path: f, name: f.split('/').pop(), modules: countIn(f), subs: data.folders.filter((x) => parentOf(x) === f).length }))
+  }, [data.folders, folder, flatAll, countIn])
+  const openFolder = (p) => { setFlatAll(false); setFolder(p) }
 
   const toggleTag = (tag) => setActiveTags((prev) => {
     const next = new Set(prev); next.has(tag) ? next.delete(tag) : next.add(tag); return next
   })
 
-  async function onImport() { if (!api) return; const r = await api.importInto(folder); if (!r?.canceled) reload() }
-  async function onImportFolder() { if (!api) return; const r = await api.importFolder(folder); if (!r?.canceled) reload() }
+  // Imports and new folders land in the folder you're browsing (root in "All").
+  const destFolder = flatAll ? '' : folder
+  async function onImport() { if (!api) return; const r = await api.importInto(destFolder); if (!r?.canceled) reload() }
+  async function onImportFolder() { if (!api) return; const r = await api.importFolder(destFolder); if (!r?.canceled) reload() }
   async function onDropImport(e) {
     e.preventDefault(); setDropping(false)
     if (!api || !canEdit) return
     const paths = [...(e.dataTransfer?.files || [])].map((f) => { try { return api.getFilePath(f) } catch { return null } }).filter(Boolean)
     if (!paths.length) return
-    const r = await api.importPaths(paths, folder)
+    const r = await api.importPaths(paths, destFolder)
     if (!r?.canceled) reload()
   }
   async function onChangeTheme(t) { applyTheme(t); setSettings((s) => ({ ...s, theme: t })); if (api) await api.setSettings({ theme: t }) }
@@ -208,7 +225,7 @@ export default function App() {
   async function createFolderNow(name) {
     setNewFolderOpen(false)
     if (!api || !name) return
-    await api.createFolder(folder ? `${folder}/${name}` : name); reload()
+    await api.createFolder(destFolder ? `${destFolder}/${name}` : name); reload()
   }
   async function onDeleteModule(m) { if (!api) return; const r = await api.deleteModule(m.id, m.title); if (!r?.canceled) reload() }
   async function onDeleteFolder() {
@@ -269,7 +286,7 @@ export default function App() {
               </SegmentedControl>
               {canEdit && <Button label="New folder" variant="secondary" onClick={() => setNewFolderOpen(true)} />}
               {canEdit && <Button label="Attach folder" variant="secondary" onClick={onImportFolder} />}
-              {canEdit && folder && <Button label="Delete folder" variant="ghost" onClick={onDeleteFolder} />}
+              {canEdit && !flatAll && folder && <Button label="Delete folder" variant="ghost" onClick={onDeleteFolder} />}
               {canEdit && <Button label="Import" variant="primary" onClick={onImport} />}
             </div>
 
@@ -279,7 +296,10 @@ export default function App() {
               onDrop={onDropImport}>
               <aside className="sidebar">
                 <div className="side-h">Folders</div>
-                <TreeNode node={tree} depth={0} current={folder} onSelect={setFolder} countIn={countIn} />
+                <div className={'side-row all-row' + (flatAll ? ' active' : '')} onClick={() => setFlatAll(true)}>
+                  <span className="ell">All modules</span><span className="n">{data.modules.length}</span>
+                </div>
+                <TreeNode node={tree} depth={0} current={flatAll ? null : folder} onSelect={openFolder} countIn={countIn} />
                 {tagCounts.length > 0 && <div className="side-h">Tags</div>}
                 <div className="side-tags">
                   {tagCounts.map(([tag, n]) => (
@@ -293,26 +313,42 @@ export default function App() {
 
               <main className="content">
                 <div className="crumbs">
-                  <span className={folder ? 'crumb link' : 'crumb'} onClick={() => setFolder('')}>All</span>
-                  {crumbs.map((c, i) => {
-                    const path = crumbs.slice(0, i + 1).join('/')
-                    return <span key={path}><span className="sep">›</span>
-                      <span className={i < crumbs.length - 1 ? 'crumb link' : 'crumb'} onClick={() => setFolder(path)}>{c}</span></span>
-                  })}
+                  {flatAll
+                    ? <span className="crumb">All modules</span>
+                    : <>
+                        <span className={folder ? 'crumb link' : 'crumb'} onClick={() => openFolder('')}>Library</span>
+                        {crumbs.map((c, i) => {
+                          const path = crumbs.slice(0, i + 1).join('/')
+                          return <span key={path}><span className="sep">›</span>
+                            <span className={i < crumbs.length - 1 ? 'crumb link' : 'crumb'} onClick={() => openFolder(path)}>{c}</span></span>
+                        })}
+                      </>}
                 </div>
 
                 {loading && <div className="empty">Loading…</div>}
-                {!loading && shown.length === 0 && (
+                {!loading && subfolders.length === 0 && shown.length === 0 && (
                   <div className="empty">
-                    {data.modules.length > 0
-                      ? 'Nothing matches your filters.'
-                      : data.htmlCount > 0
+                    {data.modules.length === 0
+                      ? (data.htmlCount > 0
                         ? <>Found {data.htmlCount} HTML file{data.htmlCount === 1 ? '' : 's'} here, but {data.htmlCount === 1 ? 'it' : 'none'} could be loaded.{data.skipped?.[0] ? <><br />First: <code>{data.skipped[0].file}</code> — {data.skipped[0].reason}.</> : ''}</>
-                        : 'Library is empty. Click Import to add a module (or run npm run seed).'}
+                        : 'Library is empty. Click Import to add a module (or run npm run seed).')
+                      : (query || activeTags.size)
+                        ? (flatAll ? 'Nothing matches your filters.' : 'Nothing in this folder matches your filters.')
+                        : 'This folder is empty.'}
                   </div>
                 )}
-                {!loading && shown.length > 0 && (
+                {!loading && (subfolders.length > 0 || shown.length > 0) && (
                   <div className="grid">
+                    {subfolders.map((f) => (
+                      <div key={'f:' + f.path} className="folder-card" onClick={() => openFolder(f.path)} title={`Open ${f.name}`}>
+                        <div className="folder-ic" aria-hidden>📁</div>
+                        <div className="grow">
+                          <div className="folder-name ell">{f.name}</div>
+                          <div className="muted small">{f.modules} module{f.modules === 1 ? '' : 's'}{f.subs ? ` · ${f.subs} folder${f.subs === 1 ? '' : 's'}` : ''}</div>
+                        </div>
+                        <span className="folder-go" aria-hidden>›</span>
+                      </div>
+                    ))}
                     {shown.map((m) => (
                       <div key={m.id} className="card" onClick={() => api?.open(m.id, undefined, m.title)} title="Open module">
                         <div className="card-top">
@@ -355,7 +391,13 @@ export default function App() {
           </>
         )}
 
-      {view === 'home' && <HomeView data={data} settings={settings} go={setView} onOpenRoot={() => api?.revealRoot()} />}
+      {view === 'home' && <HomeView data={data} settings={settings}
+        onBrowseAll={() => { setFlatAll(true); setView('library') }}
+        onBrowseFolder={(p) => { setFlatAll(false); setFolder(p); setView('library') }}
+        onOpenModule={(m) => api?.open(m.id, undefined, m.title)}
+        onOpenGenerators={() => setView('generator')}
+        onImport={canEdit ? onImport : null}
+        onOpenRoot={() => api?.revealRoot()} />}
       {view === 'generator' && <GeneratorView />}
       {view === 'settings' && <SettingsView settings={settings} root={data.root}
         libraries={libraries} activeLibraryId={activeLibraryId}
@@ -374,7 +416,7 @@ export default function App() {
 
       {editing && <EditModal module={editing} onCancel={() => setEditing(null)} onSave={saveEdit} />}
       {newFolderOpen && <NameModal title="New folder" placeholder="Folder name"
-        onCancel={() => setNewFolderOpen(false)} onSave={createFolderNow} note={folder ? `Inside: ${folder}` : 'At the library root'} />}
+        onCancel={() => setNewFolderOpen(false)} onSave={createFolderNow} note={destFolder ? `Inside: ${destFolder}` : 'At the library root'} />}
       {renaming && <NameModal title="Rename library" placeholder="Library name"
         initial={renaming.name} actionLabel="Save" sanitize={false}
         note={`Just the label shown in ShopDeck — the folder on disk (${renaming.root}) is not renamed.`}
@@ -439,22 +481,80 @@ function NameModal({ title, placeholder, note, initial = '', actionLabel = 'Crea
   )
 }
 
-function HomeView({ data, settings, go, onOpenRoot }) {
+function HomeView({ data, settings, onBrowseAll, onBrowseFolder, onOpenModule, onOpenGenerators, onOpenRoot, onImport }) {
+  const recent = useMemo(() => {
+    const upd = (m) => m.versions?.at(-1)?.updated || ''
+    return [...data.modules].sort((a, b) => upd(b).localeCompare(upd(a))).slice(0, 6)
+  }, [data.modules])
+  const topFolders = useMemo(() =>
+    data.folders.filter((f) => !f.includes('/')).sort((a, b) => a.localeCompare(b))
+      .map((f) => ({ path: f, name: f, modules: data.modules.filter((m) => m.folder === f || m.folder.startsWith(f + '/')).length })),
+  [data.folders, data.modules])
+  const versions = useMemo(() => data.modules.reduce((n, m) => n + (m.versions?.length || 1), 0), [data.modules])
+  const empty = data.modules.length === 0 && topFolders.length === 0
+
   return (
-    <div className="page">
+    <div className="page home">
       <h2>Welcome to ShopDeck</h2>
       <p className="muted">A home for the interactive HTML files you build with AI agents — stored, organized, and version-tracked.</p>
+
       <div className="stats">
-        <div className="stat"><div className="v">{data.modules.length}</div><div className="l">Modules</div></div>
+        <div className="stat clickable" onClick={onBrowseAll}><div className="v">{data.modules.length}</div><div className="l">Modules</div></div>
         <div className="stat"><div className="v">{data.folders.length}</div><div className="l">Folders</div></div>
+        <div className="stat"><div className="v">{versions}</div><div className="l">Versions</div></div>
         <div className="stat"><div className="v" style={{ textTransform: 'capitalize' }}>{settings.theme}</div><div className="l">Theme</div></div>
       </div>
-      <div className="rootline"><span className="muted small">Library:&nbsp;</span><code>{data.root || '—'}</code></div>
+
       <div className="set-actions">
-        <Button label="Open the library" variant="primary" onClick={() => go('library')} />
+        <Button label="Open the library" variant="primary" onClick={onBrowseAll} />
+        {onImport && <Button label="Import a module" variant="secondary" onClick={onImport} />}
+        <Button label="Generators" variant="secondary" onClick={onOpenGenerators} />
         <Button label="Open library folder" variant="ghost" onClick={onOpenRoot} />
-        <Button label="Generators" variant="secondary" onClick={() => go('generator')} />
       </div>
+
+      {empty && (
+        <div className="gen-card" style={{ marginTop: 18 }}>
+          <div className="set-title">Your library is empty</div>
+          <p className="muted small">Import a module, attach a folder, or run a generator to get started. Everything you
+            add lives as plain files in your library folder.</p>
+        </div>
+      )}
+
+      {topFolders.length > 0 && (
+        <section className="home-sec">
+          <div className="home-sec-h">Jump into a folder</div>
+          <div className="grid home-grid">
+            {topFolders.map((f) => (
+              <div key={f.path} className="folder-card" onClick={() => onBrowseFolder(f.path)} title={`Open ${f.name}`}>
+                <div className="folder-ic" aria-hidden>📁</div>
+                <div className="grow"><div className="folder-name ell">{f.name}</div>
+                  <div className="muted small">{f.modules} module{f.modules === 1 ? '' : 's'}</div></div>
+                <span className="folder-go" aria-hidden>›</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {recent.length > 0 && (
+        <section className="home-sec">
+          <div className="home-sec-h">Recently updated</div>
+          <div className="grid home-grid">
+            {recent.map((m) => (
+              <div key={m.id} className="card home-mod" onClick={() => onOpenModule(m)} title="Open module">
+                <div className="card-top">
+                  <div className="grow">
+                    <div className="part ell">{m.fields?.part || m.title}</div>
+                    <div className="muted small">{m.type.replace(/-/g, ' ')}</div>
+                  </div>
+                  <Badge label={`v${m.latest}`} variant="neutral" />
+                </div>
+                <div className="muted small ell">{m.folder || 'Library root'}{m.versions?.at(-1)?.updated ? ` · ${m.versions.at(-1).updated}` : ''}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

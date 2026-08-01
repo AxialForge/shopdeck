@@ -74,10 +74,20 @@ body {
 .page { flex: 1; overflow: auto; padding: 22px 26px; max-width: 760px; }
 .page h2 { margin: 0 0 8px; }
 .page p { line-height: 1.6; }
-.stats { display: flex; gap: 12px; margin: 16px 0; }
+.stats { display: flex; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
 .stat { background: var(--color-background-muted); border-radius: var(--radius-container); padding: 14px 18px; min-width: 96px; }
+.stat.clickable { cursor: pointer; transition: background .12s; }
+.stat.clickable:hover { background: var(--color-background-card); outline: 1px solid var(--sd-accent, var(--color-border)); }
 .stat .v { font-size: 24px; font-weight: 600; }
 .stat .l { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-secondary); margin-top: 4px; }
+
+/* Home page is wider than the default .page column so its grids breathe. */
+.page.home { max-width: 1000px; }
+.home-sec { margin-top: 22px; }
+.home-sec-h { font-weight: 600; margin-bottom: 10px; }
+.home-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.home-mod { gap: 6px; }
+.home-mod .part { font-weight: 600; }
 
 .main.dropping { outline: 2px dashed var(--sd-accent, #3b74f0); outline-offset: -6px; }
 
@@ -106,6 +116,7 @@ body {
 .side-row:hover { background: var(--color-background-muted); }
 .side-row.active { background: var(--color-background-muted); color: var(--color-text-primary); font-weight: 500; }
 .side-row .n { font-variant-numeric: tabular-nums; opacity: .75; }
+.side-row.all-row { font-weight: 500; color: var(--color-text-primary); margin-bottom: 2px; }
 .side-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .crumbs { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 10px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -119,6 +130,15 @@ body {
   display: flex; flex-direction: column; gap: 9px; transition: border-color .12s;
 }
 .card:hover { border-color: var(--sd-accent, var(--color-border-emphasized)); }
+.folder-card {
+  background: var(--color-background-card); border: 1px solid var(--color-border);
+  border-radius: var(--radius-container); padding: 12px 14px; cursor: pointer;
+  display: flex; align-items: center; gap: 11px; transition: border-color .12s, background .12s;
+}
+.folder-card:hover { border-color: var(--sd-accent, var(--color-border-emphasized)); background: var(--color-background-muted); }
+.folder-ic { font-size: 22px; line-height: 1; }
+.folder-name { font-weight: 600; }
+.folder-go { color: var(--color-text-secondary); font-size: 18px; opacity: .6; }
 .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .part { font-family: ui-monospace, Consolas, monospace; font-weight: 600; font-size: 15px; }
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
