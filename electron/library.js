@@ -53,9 +53,75 @@ async function loadIndex(root) {
   try { return JSON.parse(await fs.readFile(join(root, HIDDEN, 'index.json'), 'utf8')) }
   catch { return { version: 1, modules: {} } }
 }
-async function saveIndex(root, idx) {
-  await fs.mkdir(join(root, HIDDEN), { recursive: true })
-  await fs.writeFile(join(root, HIDDEN, 'index.json'), JSON.stringify(idx, null, 2), 'utf8')
+
+// Write JSON atomically: write a temp file then rename over the target. libuv's
+// rename replaces the destination atomically (MOVEFILE_REPLACE_EXISTING on
+// Windows), so a reader never sees a half-written index — even on a network share
+// and even without the lock below. This guard is always on.
+let tmpCounter = 0
+async function writeJsonAtomic(file, obj) {
+  const dir = dirname(file)
+  await fs.mkdir(dir, { recursive: true })
+  const tmp = join(dir, `.${basename(file)}.tmp-${process.pid}-${tmpCounter++}`)
+  await fs.writeFile(tmp, JSON.stringify(obj, null, 2), 'utf8')
+  try { await fs.rename(tmp, file) }
+  catch (e) { try { await fs.rm(tmp, { force: true }) } catch { /* ignore */ } throw e }
+}
+async function saveIndex(root, idx) { await writeJsonAtomic(join(root, HIDDEN, 'index.json'), idx) }
+
+// Cross-process advisory lock for the index, used only when a library is shared
+// (Settings → shared writes). An exclusive-create lock file serializes the
+// read-modify-write of index.json so two people editing the same shared library
+// at once can't lose each other's title/tag edits. A stale lock (a crashed writer)
+// is stolen after LOCK_STALE_MS; if the lock can't be taken in time we proceed
+// anyway (degrading to atomic-write-only) rather than hang.
+const LOCK_STALE_MS = 15000
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+async function withIndexLock(root, enabled, fn) {
+  if (!enabled) return fn()
+  const dir = join(root, HIDDEN)
+  await fs.mkdir(dir, { recursive: true })
+  const lock = join(dir, 'index.lock')
+  let held = false
+  for (let i = 0; i < 50 && !held; i++) {
+    try {
+      const fh = await fs.open(lock, 'wx')
+      try { await fh.write(String(process.pid)) } finally { await fh.close() }
+      held = true
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e
+      try { const st = await fs.stat(lock); if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { await fs.rm(lock, { force: true }); continue } } catch { continue }
+      await sleep(100)
+    }
+  }
+  try { return await fn() } finally { if (held) { try { await fs.rm(lock, { force: true }) } catch { /* ignore */ } } }
+}
+
+// ---- Content search (opt-in) -----------------------------------------------
+// Reduce a module's HTML to lowercase searchable text: drop <style> (pure noise)
+// but KEEP script text so an embedded DATA blob (serials, dates, reasons) is
+// searchable. Capped so a pathological file can't bloat the index.
+export function extractText(html) {
+  return String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .slice(0, 500000)
+}
+
+/** Ids of modules whose indexed content contains `query` (content search on). */
+export async function searchContent(root, query) {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return []
+  let idx
+  try { idx = JSON.parse(await fs.readFile(join(root, HIDDEN, 'content-index.json'), 'utf8')) }
+  catch { return [] }
+  const out = []
+  for (const [id, text] of Object.entries(idx.modules || {})) if (typeof text === 'string' && text.includes(q)) out.push(id)
+  return out
 }
 
 // Classify a directory entry. OneDrive "Files On-Demand" placeholders are reparse
@@ -159,7 +225,7 @@ function inferManifest(html, absFile, mtime) {
  * module version so history survives (whether the update happened in-app or by
  * someone dropping a newer file on the shared drive). Applies title/tag overrides.
  */
-export async function scanLibrary(root) {
+export async function scanLibrary(root, opts = {}) {
   await fs.mkdir(join(root, HIDDEN), { recursive: true })
   const idx = await loadIndex(root)
   idx.modules ||= {}
@@ -167,6 +233,7 @@ export async function scanLibrary(root) {
   const { htmls, folders } = await walk(root)
   const modules = []
   const skipped = []   // files that were found but couldn't become modules (with why)
+  const content = {}   // id -> searchable text, when opts.indexContent
 
   for (const file of htmls) {
     const relFile = toPosix(relative(root, file))
@@ -185,6 +252,7 @@ export async function scanLibrary(root) {
     }
 
     const id = man.id
+    if (opts.indexContent) content[id] = extractText(html)
     const relFolder = dirname(relFile) === '.' ? '' : dirname(relFile)
     const srcAbs = await siblingSource(file)
 
@@ -227,14 +295,49 @@ export async function scanLibrary(root) {
     })
   }
 
-  await saveIndex(root, idx)
+  // Persist. On a shared library, take the lock and merge our version records
+  // into the current on-disk index so a coworker's concurrent title/tag edit
+  // isn't clobbered (scan never changes overrides — those stay authoritative).
+  const savedIdx = await withIndexLock(root, !!opts.sharedWrites, async () => {
+    let target = idx
+    if (opts.sharedWrites) {
+      const cur = await loadIndex(root)
+      cur.modules ||= {}
+      for (const [id, rec] of Object.entries(idx.modules)) {
+        const c = (cur.modules[id] ||= { overrides: {}, versions: [] })
+        for (const v of rec.versions) if (!c.versions.some((x) => x.version === v.version)) c.versions.push(v)
+        c.versions.sort((a, b) => a.version - b.version)
+        if (c.lastVersion === undefined || rec.lastVersion >= c.lastVersion) { c.lastPath = rec.lastPath; c.lastVersion = rec.lastVersion }
+        // keep c.overrides — the on-disk copy is authoritative for edits
+      }
+      target = cur
+    }
+    await saveIndex(root, target)
+    return target
+  })
 
-  // Finalize with the full version picture and dedupe by id (highest-version
-  // file wins), so duplicate files sharing an id can't produce two cards.
+  if (opts.indexContent) {
+    try { await writeJsonAtomic(join(root, HIDDEN, 'content-index.json'), { version: 1, builtAt: new Date().toISOString(), modules: content }) }
+    catch { /* content index is best-effort; search just returns nothing */ }
+  }
+
+  // Finalize with the full version picture and the persisted overrides, deduped
+  // by id (highest-version file wins) so duplicate files sharing an id can't
+  // produce two cards.
   const byId = new Map()
   for (const m of modules) {
-    const versions = idx.modules[m.id].versions.map((v) => ({ version: v.version, updated: v.updated, created: v.created, source: v.source }))
-    const finalized = { ...m, versions, latest: Math.max(...versions.map((v) => v.version)) }
+    const rec = savedIdx.modules[m.id] || { versions: [], overrides: {} }
+    const ov = rec.overrides || {}
+    const versions = rec.versions.map((v) => ({ version: v.version, updated: v.updated, created: v.created, source: v.source }))
+    const finalized = {
+      ...m,
+      title: ov.title || m.manifestTitle,
+      tags: ov.tags || m.manifestTags,
+      description: ov.description || m.description,
+      edited: !!(ov.title || ov.tags),
+      versions,
+      latest: Math.max(...versions.map((v) => v.version))
+    }
     const prev = byId.get(m.id)
     if (!prev || finalized.currentVersion > prev.currentVersion) byId.set(m.id, finalized)
   }
@@ -266,18 +369,22 @@ export async function moduleVersions(root, id) {
   return { versions, latest: Math.max(...versions.map((v) => v.version)) }
 }
 
-/** Persist app-side title/tag overrides (module files are never touched). */
-export async function setOverride(root, id, patch) {
-  const idx = await loadIndex(root)
-  const rec = idx.modules?.[id]
-  if (!rec) return false
-  rec.overrides = { ...rec.overrides, ...patch }
-  for (const k of Object.keys(rec.overrides)) {
-    const v = rec.overrides[k]
-    if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) delete rec.overrides[k]
-  }
-  await saveIndex(root, idx)
-  return true
+/** Persist app-side title/tag overrides (module files are never touched). On a
+ * shared library the read-modify-write runs under the index lock so concurrent
+ * editors can't lose each other's changes. */
+export async function setOverride(root, id, patch, opts = {}) {
+  return withIndexLock(root, !!opts.sharedWrites, async () => {
+    const idx = await loadIndex(root)
+    const rec = idx.modules?.[id]
+    if (!rec) return false
+    rec.overrides = { ...rec.overrides, ...patch }
+    for (const k of Object.keys(rec.overrides)) {
+      const v = rec.overrides[k]
+      if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) delete rec.overrides[k]
+    }
+    await saveIndex(root, idx)
+    return true
+  })
 }
 
 /** Copy module HTML (+ sibling source) into a folder under the root. */

@@ -49,12 +49,23 @@ The library window stays as you left it.
 
 ## Searching, sorting, filtering
 
-- **Search** matches part number, title, description, and tags.
+- **Search** matches part number, title, description, and tags. Turn on
+  **Settings → Search inside modules** and it also matches text *inside* every
+  module — so searching a serial or a value finds whichever files contain it, even
+  if it's buried in the data.
 - **Sort** by most-recently-updated, name, or size.
 - **Tag filter** narrows to modules carrying any selected tag.
 - **Folder** selection scopes everything to that branch of the tree.
 
 These stack — e.g. *Tooling ▸ Timelines* + tag `blocker` + search `147`.
+
+## Sharing a library with a team
+
+Point the library folder at a network share and everyone reads one library. If
+several people will **edit** the same shared library (rename modules, retag),
+switch on **Settings → Shared library (safe concurrent writes)** so ShopDeck locks
+its index while saving — two people editing at once then can't overwrite each
+other. Pair it with **Read-only mode** for viewers who shouldn't change anything.
 
 ## Importing modules
 

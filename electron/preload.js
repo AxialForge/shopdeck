@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('shopdeck', {
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
 
   scan: () => ipcRenderer.invoke('library:scan'),
+  searchContent: (query) => ipcRenderer.invoke('library:searchContent', { query }),
   chooseRoot: () => ipcRenderer.invoke('library:chooseRoot'),
   revealRoot: () => ipcRenderer.invoke('library:reveal'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', { url }),

@@ -72,8 +72,21 @@ export default function App() {
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [renaming, setRenaming] = useState(null)  // library being renamed
   const [thumbs, setThumbs] = useState({})       // id -> data URL ('' = tried, none)
+  const [contentHits, setContentHits] = useState(null) // Set of ids matched by content search (null = n/a)
 
   const applyTheme = (t) => { document.documentElement.dataset.theme = t || 'grey' }
+
+  // Content search (opt-in): ask main which modules contain the query text.
+  // Debounced so typing doesn't hammer a network share.
+  useEffect(() => {
+    if (!api || !settings.contentSearch || !query.trim()) { setContentHits(null); return }
+    let cancelled = false
+    const t = setTimeout(async () => {
+      const ids = await api.searchContent(query.trim())
+      if (!cancelled) setContentHits(new Set(ids || []))
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [query, settings.contentSearch])
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -146,15 +159,18 @@ export default function App() {
       if (folder && !(m.folder === folder || m.folder.startsWith(folder + '/'))) return false
       if (activeTags.size && !m.tags.some((t) => activeTags.has(t))) return false
       if (!q) return true
-      return [m.title, m.id, m.description, m.fields?.part, ...(m.tags || [])]
+      const meta = [m.title, m.id, m.description, m.fields?.part, ...(m.tags || [])]
         .filter(Boolean).join(' ').toLowerCase().includes(q)
+      if (meta) return true
+      // Fall back to a content-search hit (module text) when it's enabled.
+      return !!(settings.contentSearch && contentHits && contentHits.has(m.id))
     })
     const upd = (m) => m.versions.at(-1)?.updated || ''
     return [...list].sort((a, b) =>
       sort === 'title' ? a.title.localeCompare(b.title)
         : sort === 'swaps' ? (b.fields?.events || 0) - (a.fields?.events || 0)
           : upd(b).localeCompare(upd(a)))
-  }, [data.modules, query, sort, folder, activeTags])
+  }, [data.modules, query, sort, folder, activeTags, settings.contentSearch, contentHits])
 
   const toggleTag = (tag) => setActiveTags((prev) => {
     const next = new Set(prev); next.has(tag) ? next.delete(tag) : next.add(tag); return next
@@ -202,6 +218,12 @@ export default function App() {
   }
 
   async function onChangeMode(m) { setSettings((s) => ({ ...s, mode: m })); if (api) await api.setSettings({ mode: m }) }
+  // Toggle a boolean setting; reload so a scan re-runs (content search needs the
+  // index built, shared writes changes how the next scan persists).
+  async function onToggleSetting(key, value) {
+    setSettings((s) => ({ ...s, [key]: value }))
+    if (api) { await api.setSettings({ [key]: value }); reload() }
+  }
   const canEdit = settings.mode !== 'readonly'
   const crumbs = folder ? folder.split('/') : []
 
@@ -237,7 +259,7 @@ export default function App() {
           <>
             <div className="toolbar">
               <div className="search">
-                <TextInput label="Search" value={query} onChange={setQuery} placeholder="Search part, tag, or title" hasClear />
+                <TextInput label="Search" value={query} onChange={setQuery} placeholder={settings.contentSearch ? 'Search part, tag, title, or contents' : 'Search part, tag, or title'} hasClear />
               </div>
               <div className="spacer" />
               <SegmentedControl value={sort} onChange={setSort}>
@@ -338,6 +360,7 @@ export default function App() {
       {view === 'settings' && <SettingsView settings={settings} root={data.root}
         libraries={libraries} activeLibraryId={activeLibraryId}
         onChangeTheme={onChangeTheme} onChangeMode={onChangeMode} onChangeRoot={onChangeRoot}
+        onToggleSetting={onToggleSetting}
         onReveal={() => api?.revealRoot()} hasApi={!!api}
         onAddLibrary={onAddLibrary} onSwitchLibrary={onSwitchLibrary}
         onRenameLibrary={(lib) => setRenaming(lib)} onRemoveLibrary={onRemoveLibrary} onRevealLibrary={onRevealLibrary} />}
@@ -615,7 +638,7 @@ function GeneratorsSection({ hasApi }) {
 }
 
 function SettingsView({ settings, root, libraries, activeLibraryId, onChangeTheme, onChangeMode, onChangeRoot,
-  onReveal, hasApi, onAddLibrary, onSwitchLibrary, onRenameLibrary, onRemoveLibrary, onRevealLibrary }) {
+  onToggleSetting, onReveal, hasApi, onAddLibrary, onSwitchLibrary, onRenameLibrary, onRemoveLibrary, onRevealLibrary }) {
   const [backupMsg, setBackupMsg] = useState('')
   async function onBackup() {
     if (!hasApi) return
@@ -634,6 +657,32 @@ function SettingsView({ settings, root, libraries, activeLibraryId, onChangeThem
           <SegmentedControl value={settings.mode || 'editing'} onChange={onChangeMode}>
             <SegmentedControlItem value="editing" label="Editing" />
             <SegmentedControlItem value="readonly" label="Read-only" />
+          </SegmentedControl>
+        </div>
+      </section>
+
+      <section className="set-sec">
+        <div className="set-title">Search inside modules</div>
+        <div className="muted small">Also search the <em>content</em> of every module — find a serial, date, or
+          value that appears anywhere inside a file, not just its title and tags. Builds a small search index
+          on each scan; leave off if you only need title/tag search.</div>
+        <div style={{ marginTop: 8 }}>
+          <SegmentedControl value={settings.contentSearch ? 'on' : 'off'} onChange={(v) => onToggleSetting('contentSearch', v === 'on')}>
+            <SegmentedControlItem value="off" label="Off" />
+            <SegmentedControlItem value="on" label="On" />
+          </SegmentedControl>
+        </div>
+      </section>
+
+      <section className="set-sec">
+        <div className="set-title">Shared library (safe concurrent writes)</div>
+        <div className="muted small">Turn on when several people use the <em>same</em> library on a network share.
+          ShopDeck then locks its index while saving edits so two people editing at once can't overwrite each other.
+          Leave off for a personal library — it's a touch faster.</div>
+        <div style={{ marginTop: 8 }}>
+          <SegmentedControl value={settings.sharedWrites ? 'on' : 'off'} onChange={(v) => onToggleSetting('sharedWrites', v === 'on')}>
+            <SegmentedControlItem value="off" label="Off" />
+            <SegmentedControlItem value="on" label="On" />
           </SegmentedControl>
         </div>
       </section>

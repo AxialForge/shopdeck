@@ -77,6 +77,8 @@ Design principles:
 - **Editable metadata** — rename a module or retag it in-app; saved as overrides,
   the source file untouched.
 - **Search &amp; filter** — by part / title / tag, sorted by updated / name / size.
+  Optionally **search inside module contents** too (find a serial or value anywhere
+  in a file), toggled in Settings.
 - **Local or network-share library** — point the root at a shared drive so a whole
   team reads one library.
 - **Three themes** — light, grey, black (AxialForge royal-blue accent).
@@ -158,6 +160,8 @@ App settings persist to `settings.json` in Electron's `userData` directory
 |-----|---------|
 | `libraryRoot` | Absolute path to the library folder (local or UNC network share). |
 | `theme` | `light` \| `grey` \| `black`. |
+| `contentSearch` | `true` to also search text inside modules (builds a content index on scan). |
+| `sharedWrites` | `true` to lock + merge the index for a shared/network library used by several people. |
 | `showUpdater` | Set `false` to hide the update checker. The `SHOPDECK_NO_UPDATES` env var forces it off regardless. |
 
 ## The module contract

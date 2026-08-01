@@ -1,6 +1,16 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+- **Search inside modules** (Settings → *Search inside modules*, off by default): the
+  library search also matches text *inside* each module — find a serial, date, or
+  value that appears anywhere in a file, not just in its title/tags. A small content
+  index is built on scan; the search box widens to "part, tag, title, or contents".
+- **Shared library — safe concurrent writes** (Settings → *Shared library*, off by
+  default): when several people use the same library on a network share, ShopDeck
+  locks its index during edits and merges on scan so two people editing at once can't
+  overwrite each other's title/tag changes. Index writes are also atomic (temp-file +
+  rename) regardless of this setting, so a reader never sees a half-written index.
 ### Changed
 - **Generators are now plug-ins.** The Generator tab is a plug-in area: it lists
   self-contained HTML **generator tools** kept in a *ShopDeck Generators* folder you

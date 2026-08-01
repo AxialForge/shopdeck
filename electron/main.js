@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, screen } from 'electron'
 import { join, basename } from 'node:path'
 import { promises as fs, watch } from 'node:fs'
-import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions, deleteModule, deleteFolder, backupLibrary } from './library.js'
+import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions, deleteModule, deleteFolder, backupLibrary, searchContent } from './library.js'
 import { normalizeLibraries, activeLibrary as pickActive, addLibrary, renameLibrary, removeLibrary, setActive, setLibraryRoot } from './libraries.js'
 import * as updater from './updater.js'
 import { scanGenerators, writeOutputs } from './generators-host.js'
@@ -17,7 +17,7 @@ process.on('unhandledRejection', (err) => { console.error('[main] unhandled reje
 // ---- Settings (userData/settings.json) --------------------------------------
 // `libraries` is the multi-library list (see electron/libraries.js); `libraryRoot`
 // is the legacy single-root field kept only so old installs migrate cleanly.
-const DEFAULTS = { libraries: null, activeLibraryId: null, libraryRoot: null, generatorRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
+const DEFAULTS = { libraries: null, activeLibraryId: null, libraryRoot: null, generatorRoot: null, theme: 'grey', showUpdater: true, mode: 'editing', contentSearch: false, sharedWrites: false }
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const defaultRoot = () => join(app.getPath('documents'), 'ShopDeck Library')
 const defaultGeneratorRoot = () => join(app.getPath('documents'), 'ShopDeck Generators')
@@ -77,7 +77,9 @@ function friendlyRootError(err) {
 // so the renderer can render a retry banner instead of hanging on "Loading…".
 async function scanActive() {
   const lib = pickActive(await libraryState())
-  try { return { ...(await scanLibrary(lib.root)), library: lib } }
+  const s = await loadSettings()
+  const opts = { indexContent: !!s.contentSearch, sharedWrites: !!s.sharedWrites }
+  try { return { ...(await scanLibrary(lib.root, opts)), library: lib } }
   catch (err) { return { root: lib.root, folders: [], modules: [], library: lib, error: friendlyRootError(err) } }
 }
 
@@ -294,8 +296,14 @@ ipcMain.handle('module:setMeta', async (_e, { id, title, tags }) => {
   const patch = {}
   if (title !== undefined) patch.title = title
   if (tags !== undefined) patch.tags = tags
-  return setOverride(await libraryRoot(), id, patch)
+  const s = await loadSettings()
+  return setOverride(await libraryRoot(), id, patch, { sharedWrites: !!s.sharedWrites })
 })
+
+// Content search: ids of modules whose indexed text contains the query. Returns
+// [] unless the content index exists (built by scan when contentSearch is on).
+ipcMain.handle('library:searchContent', async (_e, { query } = {}) =>
+  searchContent(await libraryRoot(), query))
 
 ipcMain.handle('module:import', async (_e, { destRel } = {}) => {
   const res = await dialog.showOpenDialog(mainWindow, {
