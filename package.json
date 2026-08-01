@@ -1,6 +1,6 @@
 {
   "name": "shopdeck",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Desktop library for storing, organizing, presenting, and version-tracking interactive work-item modules.",
   "author": "AxialForge <37514365+AxialForge@users.noreply.github.com>",
   "license": "Apache-2.0",
