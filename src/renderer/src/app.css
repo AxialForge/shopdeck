@@ -82,7 +82,9 @@ body {
 .main.dropping { outline: 2px dashed var(--sd-accent, #3b74f0); outline-offset: -6px; }
 
 .gen-card { border: 1px solid var(--color-border); border-radius: var(--radius-container); padding: 16px 18px; margin-top: 14px; max-width: 580px; background: var(--color-background-card); }
-.gen-card code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.gen-card code, .gen-drop code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.gen-drop { border: 1.5px dashed var(--color-border); border-radius: var(--radius-container); padding: 16px 18px; margin-top: 14px; max-width: 580px; transition: border-color .12s, background .12s; }
+.gen-drop.over { border-color: var(--sd-accent, #3b74f0); background: color-mix(in srgb, var(--sd-accent, #3b74f0) 8%, transparent); }
 
 .toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--color-border); }
 .search { flex: 1; max-width: 420px; }

@@ -31,7 +31,16 @@ contextBridge.exposeInMainWorld('shopdeck', {
   deleteModule: (id, title) => ipcRenderer.invoke('module:delete', { id, title }),
   deleteFolder: (relPath) => ipcRenderer.invoke('folder:delete', { relPath }),
   backup: () => ipcRenderer.invoke('library:backup'),
-  generateTimeline: (destRel) => ipcRenderer.invoke('generator:timeline', { destRel }),
+
+  // Generator plug-ins (self-contained HTML tools in the generators folder).
+  generators: {
+    list: () => ipcRenderer.invoke('generators:list'),
+    open: (file) => ipcRenderer.invoke('generators:open', { file }),
+    add: () => ipcRenderer.invoke('generators:add'),
+    addPaths: (paths) => ipcRenderer.invoke('generators:addPaths', { paths }),
+    reveal: () => ipcRenderer.invoke('generators:reveal'),
+    chooseRoot: () => ipcRenderer.invoke('generators:chooseRoot')
+  },
   thumb: (id, version) => ipcRenderer.invoke('module:thumb', { id, version }),
   onLibraryChanged: (cb) => {
     const fn = () => cb()

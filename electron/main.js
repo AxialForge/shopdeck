@@ -4,9 +4,7 @@ import { promises as fs, watch } from 'node:fs'
 import { scanLibrary, resolveModuleFile, setOverride, importFiles, importTree, createFolder, moduleVersions, deleteModule, deleteFolder, backupLibrary } from './library.js'
 import { normalizeLibraries, activeLibrary as pickActive, addLibrary, renameLibrary, removeLibrary, setActive, setLibraryRoot } from './libraries.js'
 import * as updater from './updater.js'
-import XLSX from 'xlsx'
-import { generateTimeline } from './generators/timeline.js'
-import timelineTemplate from './generators/timeline-template.html?raw'
+import { scanGenerators, writeOutputs } from './generators-host.js'
 
 // ---- Crash resilience -------------------------------------------------------
 // A single stray async error in the main process otherwise shows Electron's
@@ -19,9 +17,19 @@ process.on('unhandledRejection', (err) => { console.error('[main] unhandled reje
 // ---- Settings (userData/settings.json) --------------------------------------
 // `libraries` is the multi-library list (see electron/libraries.js); `libraryRoot`
 // is the legacy single-root field kept only so old installs migrate cleanly.
-const DEFAULTS = { libraries: null, activeLibraryId: null, libraryRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
+const DEFAULTS = { libraries: null, activeLibraryId: null, libraryRoot: null, generatorRoot: null, theme: 'grey', showUpdater: true, mode: 'editing' }
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const defaultRoot = () => join(app.getPath('documents'), 'ShopDeck Library')
+const defaultGeneratorRoot = () => join(app.getPath('documents'), 'ShopDeck Generators')
+
+// The folder that holds the user's generator tools (plug-ins). Not bundled with
+// the app — the user drops HTML tools in here. Best-effort create; never throws.
+async function generatorRoot() {
+  const s = await loadSettings()
+  const dir = s.generatorRoot || defaultGeneratorRoot()
+  try { await fs.mkdir(dir, { recursive: true }) } catch { /* surfaced by scan */ }
+  return dir
+}
 
 async function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(await fs.readFile(settingsFile(), 'utf8')) } }
@@ -143,6 +151,27 @@ function openModuleWindow({ indexPath, title, version }) {
   win.loadFile(indexPath)
   moduleWindows.add(win)
   win.on('closed', () => moduleWindows.delete(win))
+  return win
+}
+
+// Generator-tool windows. Each runs an untrusted HTML tool sandboxed behind the
+// generator-preload bridge; we remember which generator a window is so its
+// context()/emit() calls resolve to the right tool.
+const generatorByWc = new Map() // webContents.id -> generator descriptor
+function openGeneratorWindow(gen) {
+  const win = new BrowserWindow({
+    width: 1100, height: 820, title: gen.name || 'Generator',
+    backgroundColor: '#f4f6f8',
+    webPreferences: {
+      preload: join(__dirname, '../preload/generator.js'),
+      contextIsolation: true, nodeIntegration: false, sandbox: false
+    }
+  })
+  win.setMenuBarVisibility(false)
+  hardenWindow(win)
+  generatorByWc.set(win.webContents.id, gen)
+  win.on('closed', () => generatorByWc.delete(win.webContents.id))
+  win.loadFile(gen.path)
   return win
 }
 
@@ -326,29 +355,86 @@ ipcMain.handle('folder:delete', async (_e, { relPath }) => {
   return { canceled: false }
 })
 
-// ---- Generators ------------------------------------------------------------
-ipcMain.handle('generator:timeline', async (_e, { destRel } = {}) => {
-  const pick = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose the timeline spreadsheet',
-    filters: [{ name: 'Excel workbook', extensions: ['xlsx', 'xls'] }], properties: ['openFile']
-  })
-  if (pick.canceled || !pick.filePaths[0]) return { canceled: true }
-
-  let result
-  try {
-    const wb = XLSX.readFile(pick.filePaths[0])
-    result = generateTimeline({ wb, template: timelineTemplate, today: new Date().toISOString().slice(0, 10) })
-  } catch (err) { return { canceled: false, error: String(err.message || err) } }
-
-  const root = await libraryRoot()
-  const rel = destRel || 'Tooling/Timelines'
-  const dir = join(root, rel)
-  await fs.mkdir(dir, { recursive: true })
-  const base = `tool-swap-timeline_${result.part}`
-  await fs.writeFile(join(dir, `${base}.html`), result.html, 'utf8')
-  try { await fs.copyFile(pick.filePaths[0], join(dir, `${base}.xlsx`)) } catch { /* source optional */ }
-  return { canceled: false, part: result.part, events: result.data.events.length, positions: result.data.lanes.length, folder: rel }
+// ---- Generators (plug-in tools) --------------------------------------------
+// Generators are the user's own self-contained HTML tools in the generators
+// folder — not bundled with the app. We list them, open them in a sandboxed
+// window, and write whatever modules they emit into the active library.
+ipcMain.handle('generators:list', async () => {
+  const dir = await generatorRoot()
+  return { dir, generators: await scanGenerators(dir) }
 })
+
+ipcMain.handle('generators:reveal', async () => { await shell.openPath(await generatorRoot()); return true })
+
+ipcMain.handle('generators:chooseRoot', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose generators folder', properties: ['openDirectory', 'createDirectory']
+  })
+  if (res.canceled || !res.filePaths[0]) return { canceled: true }
+  await saveSettings({ generatorRoot: res.filePaths[0] })
+  const dir = res.filePaths[0]
+  return { canceled: false, dir, generators: await scanGenerators(dir) }
+})
+
+// Install a generator tool: copy chosen .html file(s) into the generators folder.
+ipcMain.handle('generators:add', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Add a generator tool', filters: [{ name: 'Generator HTML', extensions: ['html', 'htm'] }],
+    properties: ['openFile', 'multiSelections']
+  })
+  if (res.canceled || !res.filePaths.length) return { canceled: true }
+  const dir = await generatorRoot()
+  for (const p of res.filePaths) {
+    try { await fs.copyFile(p, join(dir, basename(p))) } catch (err) { return { canceled: false, error: String(err.message || err) } }
+  }
+  return { canceled: false, dir, generators: await scanGenerators(dir) }
+})
+
+// Install generator tools dropped as OS paths (only .html files are taken).
+ipcMain.handle('generators:addPaths', async (_e, { paths } = {}) => {
+  const dir = await generatorRoot()
+  let added = 0
+  for (const p of paths || []) {
+    if (!/\.html?$/i.test(p)) continue
+    try { await fs.copyFile(p, join(dir, basename(p))); added++ } catch { /* skip unreadable */ }
+  }
+  return { added, dir, generators: await scanGenerators(dir) }
+})
+
+ipcMain.handle('generators:open', async (_e, { file } = {}) => {
+  const dir = await generatorRoot()
+  const gen = (await scanGenerators(dir)).find((g) => g.file === file)
+  if (!gen) return { ok: false, error: 'generator not found' }
+  openGeneratorWindow(gen)
+  return { ok: true }
+})
+
+// --- Bridge calls from inside a generator-tool window ---
+ipcMain.handle('generator:context', (e) => generatorByWc.get(e.sender.id) || null)
+
+ipcMain.handle('generator:pick', async (e, { accept, multiple } = {}) => {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  const exts = Array.isArray(accept) ? accept.map((x) => String(x).replace(/^\./, '')).filter(Boolean) : []
+  const filters = exts.length ? [{ name: 'Accepted files', extensions: exts }] : []
+  const props = ['openFile']; if (multiple) props.push('multiSelections')
+  const res = await dialog.showOpenDialog(win, { title: 'Choose input file', filters, properties: props })
+  if (res.canceled) return { canceled: true, files: [] }
+  const files = []
+  for (const p of res.filePaths) {
+    try { files.push({ name: basename(p), path: p, bytes: await fs.readFile(p) }) } catch { /* skip */ }
+  }
+  return { canceled: false, files }
+})
+
+ipcMain.handle('generator:emit', async (e, { modules, folder } = {}) => {
+  const gen = generatorByWc.get(e.sender.id)
+  const dest = folder || gen?.folder || 'Generated'
+  const results = await writeOutputs(await libraryRoot(), dest, modules)
+  if (results.some((r) => r.ok)) scheduleNotify()
+  return { results }
+})
+
+ipcMain.handle('generator:closeWindow', (e) => { BrowserWindow.fromWebContents(e.sender)?.close() })
 
 ipcMain.handle('library:backup', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {

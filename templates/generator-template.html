@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Note → Module (template)</title>
+
+<!--
+  ShopDeck generator TEMPLATE.
+
+  A "generator" is a self-contained HTML tool that turns input files into ShopDeck
+  modules. ShopDeck lists it on the Generators tab, opens it in its own window, and
+  writes whatever you `emit()` into the active library.
+
+  To make your own generator:
+    1. Copy this file, rename it, edit the generator-manifest below.
+    2. Replace `buildModule()` with your real conversion.
+    3. Drop the file in your ShopDeck generators folder (Generators tab →
+       "Open generators folder"), then click "Add generator" or just refresh.
+
+  The bridge ShopDeck injects — window.shopdeckGenerator:
+    • context()            -> { id, name, accepts, folder }  (what the manifest declared)
+    • pickFiles({accept,multiple}) -> { canceled, files:[{name, path, bytes:Uint8Array}] }
+    • emit(modules, {folder}) -> { results:[{ok, file, folder, error?}] }
+         modules = [{ filename, html, folder?, source?:{name, bytes} }]
+    • close()
+
+  Input files can also come from ordinary drag-drop / <input type=file> (the File
+  API gives you bytes without any bridge). This template supports both.
+-->
+<script type="application/json" id="generator-manifest">
+{
+  "schema": 1,
+  "id": "example-note",
+  "name": "Note → Module (template)",
+  "description": "Starter generator: wraps a .md or .txt file into a simple module. Copy this file and replace buildModule().",
+  "version": 1,
+  "accepts": [".md", ".txt"],
+  "folder": "Generated"
+}
+</script>
+
+<style>
+  :root { color-scheme: light; --bg:#f4f6f8; --card:#fff; --line:#d8dde3; --text:#1b1f24; --muted:#5b6572; --accent:#3b74f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); padding:26px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 18px; }
+  .drop { border:1.5px dashed var(--line); border-radius:12px; padding:34px; text-align:center; background:var(--card); transition:.12s; }
+  .drop.over { border-color:var(--accent); background:#eef3fe; }
+  .row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .log { margin-top:16px; }
+  .log div { padding:6px 10px; border-radius:6px; background:var(--card); border:1px solid var(--line); margin-top:6px; font-size:13px; }
+  .log .err { color:#b3261e; border-color:#f0c7c2; }
+  code { font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+  <h1 id="title">Note → Module</h1>
+  <p class="sub" id="sub">Drop a .md or .txt file below (or several) to make a module for each.</p>
+
+  <div class="drop" id="drop">
+    Drag files here
+    <div class="row" style="justify-content:center">
+      <button class="primary" id="pick">Choose file(s)…</button>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+<script>
+const bridge = window.shopdeckGenerator
+const log = (msg, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = msg; document.getElementById('log').prepend(d) }
+
+// ---------------------------------------------------------------------------
+// EDIT HERE. Turn one input file into one module.
+//   input: { name, bytes: Uint8Array }
+//   return: { filename, html, source? }  (or null to skip)
+// `moduleHtml(...)` (below) builds a valid, self-contained ShopDeck module.
+// ---------------------------------------------------------------------------
+function buildModule({ name, bytes }) {
+  const text = new TextDecoder().decode(bytes)
+  const stem = name.replace(/\.[^.]+$/, '')
+  const id = 'note_' + stem.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const body = '<pre style="white-space:pre-wrap;font:15px/1.6 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:32px">'
+    + esc(text) + '</pre>'
+  return {
+    filename: id,
+    html: moduleHtml({
+      id, type: 'note', title: stem, tags: ['note'],
+      description: 'Imported from ' + name, body
+    }),
+    source: { name, bytes }   // keep the original alongside the module (optional)
+  }
+}
+
+// ---- helpers (you usually don't need to touch these) ----------------------
+function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c])) }
+
+// Build a self-contained module HTML carrying the ShopDeck module-manifest.
+function moduleHtml({ id, type, title, tags, description, body }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const manifest = { schema:1, id, type, title, version:1, created:today, updated:today, tags: tags||[], description: description||'' }
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    + '<title>' + esc(title) + '</title>'
+    + '<script type="application/json" id="module-manifest">\n' + JSON.stringify(manifest, null, 2) + '\n<\/script>'
+    + '<style>body{margin:0;background:#fff;color:#1b1f24}<\/style>'
+    + '</head><body>' + body + '</body></html>'
+}
+
+// ---- plumbing: read inputs, run buildModule, emit -------------------------
+async function run(files) {
+  if (!files.length) return
+  const modules = []
+  for (const f of files) {
+    try { const m = buildModule(f); if (m) { modules.push(m); log('Built ' + m.filename + '.html') } }
+    catch (err) { log('Failed on ' + f.name + ': ' + (err.message || err), 'err') }
+  }
+  if (!modules.length) return
+  if (!bridge) { log('Open this tool inside ShopDeck to save modules.', 'err'); return }
+  const { results } = await bridge.emit(modules)
+  for (const r of results) log(r.ok ? 'Saved ' + r.folder + '/' + r.file : 'Save failed: ' + r.error, r.ok ? '' : 'err')
+}
+
+// From ordinary drag-drop / file input (File objects → bytes).
+async function fromFiles(fileList) {
+  const files = []
+  for (const f of fileList) files.push({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })
+  run(files)
+}
+
+const drop = document.getElementById('drop')
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over') })
+drop.addEventListener('dragleave', () => drop.classList.remove('over'))
+drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); fromFiles(e.dataTransfer.files) })
+
+// "Choose file(s)" uses ShopDeck's native picker when available, else a plain input.
+document.getElementById('pick').addEventListener('click', async () => {
+  const ctx = bridge ? await bridge.context() : null
+  if (bridge) {
+    const { canceled, files } = await bridge.pickFiles({ accept: ctx?.accepts, multiple: true })
+    if (!canceled) run(files)
+  } else {
+    const input = document.createElement('input')
+    input.type = 'file'; input.multiple = true
+    input.onchange = () => fromFiles(input.files)
+    input.click()
+  }
+})
+
+// Reflect the manifest's declared name/description in the header, if present.
+;(async () => {
+  const ctx = bridge ? await bridge.context() : null
+  if (ctx?.name) document.getElementById('title').textContent = ctx.name
+})()
+</script>
+</body>
+</html>

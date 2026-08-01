@@ -334,7 +334,7 @@ export default function App() {
         )}
 
       {view === 'home' && <HomeView data={data} settings={settings} go={setView} onOpenRoot={() => api?.revealRoot()} />}
-      {view === 'generator' && <GeneratorView go={setView} onGenerated={reload} />}
+      {view === 'generator' && <GeneratorView />}
       {view === 'settings' && <SettingsView settings={settings} root={data.root}
         libraries={libraries} activeLibraryId={activeLibraryId}
         onChangeTheme={onChangeTheme} onChangeMode={onChangeMode} onChangeRoot={onChangeRoot}
@@ -436,42 +436,92 @@ function HomeView({ data, settings, go, onOpenRoot }) {
   )
 }
 
-function GeneratorView({ onGenerated, go }) {
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState(null)
-  const [error, setError] = useState('')
-  async function run() {
+function GeneratorView() {
+  const [dir, setDir] = useState('')
+  const [gens, setGens] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [dropping, setDropping] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    if (!api) { setLoaded(true); return }
+    const r = await api.generators.list()
+    setDir(r?.dir || ''); setGens(r?.generators || []); setLoaded(true)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function onOpen(file) { if (api) await api.generators.open(file) }
+  async function onAdd() {
     if (!api) return
-    setBusy(true); setError(''); setResult(null)
-    const r = await api.generateTimeline()
-    setBusy(false)
+    const r = await api.generators.add()
     if (r?.canceled) return
-    if (r?.error) { setError(r.error); return }
-    setResult(r); onGenerated?.()
+    if (r?.error) { setMsg(r.error); return }
+    setDir(r.dir); setGens(r.generators); setMsg('')
   }
+  async function onDrop(e) {
+    e.preventDefault(); setDropping(false)
+    if (!api) return
+    const paths = [...(e.dataTransfer?.files || [])]
+      .map((f) => { try { return api.getFilePath(f) } catch { return null } })
+      .filter((p) => p && /\.html?$/i.test(p))
+    if (!paths.length) { setMsg('Drop a generator’s .html file to install it.'); return }
+    const r = await api.generators.addPaths(paths)
+    setDir(r.dir); setGens(r.generators); setMsg(r.added ? `Installed ${r.added} generator${r.added > 1 ? 's' : ''}.` : '')
+  }
+
   return (
     <div className="page">
       <h2>Generators</h2>
-      <p>Build modules from source data. Each generator turns an input into a
-        self-contained module in the exact standard format.</p>
-      <div className="gen-card">
-        <div className="set-title">Tool-swap timeline</div>
-        <p className="muted small">Pick the standard timeline spreadsheet (a workbook with a
-          <code> Swap Log </code> and a <code> By Position </code> sheet). It produces a timeline
-          module in the exact current format and adds it to your library under
-          <code> Tooling/Timelines</code>, with the spreadsheet attached as its source.</p>
-        <div className="set-actions">
-          <Button label={busy ? 'Generating…' : 'Generate from spreadsheet'} variant="primary" onClick={run} />
+      <p>Generators are self-contained HTML tools that turn source files into
+        modules. They’re your own plug-ins — drop a tool in the generators folder
+        and it shows up here. Open one, feed it a file (or several), and it adds
+        finished modules straight to your active library.</p>
+
+      <div
+        className={'gen-drop' + (dropping ? ' over' : '')}
+        onDragOver={(e) => { e.preventDefault(); setDropping(true) }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={onDrop}
+      >
+        <div className="set-actions" style={{ marginTop: 0 }}>
+          <Button label="Add generator…" variant="primary" onClick={onAdd} />
+          <Button label="Open generators folder" variant="secondary" onClick={() => api && api.generators.reveal()} />
         </div>
-        {error && <div className="small err" style={{ marginTop: 8 }}>{error}</div>}
-        {result && (
-          <div className="small" style={{ marginTop: 8 }}>
-            Created <b>{result.part}</b> — {result.events.toLocaleString()} swaps across {result.positions} positions,
-            in {result.folder}. <button className="linkbtn" onClick={() => go('library')}>Open in Library</button>
-          </div>
-        )}
-        {!api && <div className="muted small">(Runs in the desktop app.)</div>}
+        <div className="muted small" style={{ marginTop: 8 }}>
+          …or drag a generator’s <code>.html</code> file onto this area to install it.
+        </div>
       </div>
+      {msg && <div className="small" style={{ marginTop: 8 }}>{msg}</div>}
+
+      {loaded && gens.length === 0 && (
+        <div className="gen-card">
+          <div className="set-title">No generators yet</div>
+          <p className="muted small">Your generators folder is empty. Build a tool from the
+            template and drop it in — see <code>docs/GENERATOR-SPEC.md</code> and
+            <code> templates/generator-template.html</code> in the repo. A generator is just a
+            single HTML file that reads an input and hands ShopDeck the finished module(s).</p>
+          <div className="set-actions">
+            <button className="linkbtn" onClick={() => openExternal(`${GITHUB}/blob/main/docs/GENERATOR-SPEC.md`)}>Read the generator spec →</button>
+          </div>
+        </div>
+      )}
+
+      {gens.map((g) => (
+        <div className="gen-card" key={g.file}>
+          <div className="set-title">{g.name}{g.inferred && <span className="muted small"> · no manifest</span>}</div>
+          {g.description && <p className="muted small" style={{ marginTop: 2 }}>{g.description}</p>}
+          <div className="muted small" style={{ marginTop: 4 }}>
+            {g.accepts.length ? <>Accepts <code>{g.accepts.join(' ')}</code> · </> : null}
+            Saves to <code>{g.folder || 'Generated'}</code> · <code>{g.file}</code>
+          </div>
+          <div className="set-actions">
+            <Button label="Open" variant="primary" onClick={() => onOpen(g.file)} />
+          </div>
+        </div>
+      ))}
+
+      {dir && <div className="muted small" style={{ marginTop: 16 }}>Generators folder: <code>{dir}</code></div>}
+      {!api && <div className="muted small" style={{ marginTop: 8 }}>(Runs in the desktop app.)</div>}
     </div>
   )
 }
