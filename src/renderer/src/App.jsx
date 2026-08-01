@@ -420,7 +420,7 @@ function HomeView({ data, settings, go, onOpenRoot }) {
   return (
     <div className="page">
       <h2>Welcome to ShopDeck</h2>
-      <p className="muted">A library for your interactive work-item modules — stored, organized, and version-tracked.</p>
+      <p className="muted">A home for the interactive HTML files you build with AI agents — stored, organized, and version-tracked.</p>
       <div className="stats">
         <div className="stat"><div className="v">{data.modules.length}</div><div className="l">Modules</div></div>
         <div className="stat"><div className="v">{data.folders.length}</div><div className="l">Folders</div></div>
@@ -482,10 +482,11 @@ function AboutView() {
   return (
     <div className="page">
       <h2>ShopDeck{version ? ` v${version}` : ''}</h2>
-      <p>A desktop library for interactive work-item modules — self-contained HTML
-        documents that ShopDeck stores, organizes in a nested folder tree,
-        version-tracks, and opens at full fidelity. Point it at a local folder or a
-        network share and everyone gets the same organized, searchable library.</p>
+      <p>A desktop home for the interactive HTML files you build with AI agents —
+        self-contained single-file apps that ShopDeck stores, organizes in a nested
+        folder tree, version-tracks, and opens at full fidelity. Use it for your own
+        collection at home, or point it at a shared drive so a whole team works from
+        one library.</p>
       <p className="muted small">© 2026 AxialForge · Apache-2.0 licensed</p>
       <div className="set-actions">
         <Button label="GitHub repository" variant="secondary" onClick={() => openExternal(GITHUB)} />

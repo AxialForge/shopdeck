@@ -1,7 +1,7 @@
 {
   "name": "shopdeck",
   "version": "1.1.0",
-  "description": "Desktop library for storing, organizing, presenting, and version-tracking interactive work-item modules.",
+  "description": "A desktop home for the interactive HTML files you build with AI agents — organize, version-track, and open self-contained modules at full fidelity, at home or on a shared team library.",
   "author": "AxialForge <37514365+AxialForge@users.noreply.github.com>",
   "license": "Apache-2.0",
   "private": true,

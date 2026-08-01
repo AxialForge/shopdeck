@@ -1,9 +1,10 @@
 # ShopDeck
 
-**A desktop library for interactive work-item modules** — self-contained HTML
-documents that ShopDeck stores, organizes in a nested folder tree, version-tracks,
-and opens at full fidelity. Point it at a local folder or a network share and
-everyone gets the same organized, searchable library.
+**A desktop home for the interactive HTML files you build with AI agents.**
+Self-contained single-file apps — dashboards, trackers, reports, timelines,
+calculators, guides — that ShopDeck stores, organizes in a nested folder tree,
+version-tracks, and opens at full fidelity. Use it for your own collection at
+home, or point it at a shared drive so a whole team works from one library.
 
 [![ci](https://github.com/AxialForge/shopdeck/actions/workflows/ci.yml/badge.svg)](https://github.com/AxialForge/shopdeck/actions/workflows/ci.yml)
 [![release](https://github.com/AxialForge/shopdeck/actions/workflows/release.yml/badge.svg)](https://github.com/AxialForge/shopdeck/actions/workflows/release.yml)
@@ -11,10 +12,10 @@ everyone gets the same organized, searchable library.
 ![platform](https://img.shields.io/badge/platform-Windows-blue)
 [![license](https://img.shields.io/github/license/AxialForge/shopdeck)](LICENSE)
 
-The first module type is manufacturing **tool-swap timelines** (forged-part
-die-set removal history), but ShopDeck is content-agnostic: **any** self-contained
-HTML file that carries a small manifest works — a checklist, a report, a
-dashboard, whatever comes next.
+ShopDeck is **content-agnostic**: any self-contained HTML file that carries a
+small manifest is a "module" it can hold — no matter what it does or what built
+it. A manufacturing tool-swap timeline appears in the sample data as *one example*
+of a module; ShopDeck itself knows nothing about timelines.
 
 ---
 
@@ -39,12 +40,13 @@ dashboard, whatever comes next.
 
 ## Why ShopDeck
 
-Teams build rich, interactive one-page HTML documents (Gantt-style timelines,
-reports, dashboards) but then have nowhere good to *keep* them: they scatter
-across email, network folders, and desktops, with no history when they're
-rebuilt and no easy way to find the right one. ShopDeck is the shell around them —
-a shared, searchable, version-tracked library that opens each document exactly as
-authored.
+People increasingly build rich, single-file interactive HTML apps **with AI
+agents** — dashboards, trackers, reports, timelines, calculators, guides — and
+then have nowhere good to *keep* them: they scatter across chats, downloads,
+email, and network folders, with no history when they're rebuilt and no easy way
+to find the right one again. ShopDeck is the home for those files — your own
+collection at home, or a shared, searchable, version-tracked library for a team —
+that opens each one exactly as it was authored.
 
 Design principles:
 
@@ -67,7 +69,7 @@ Design principles:
   open any of them from the card. History survives even when a newer file is
   dropped on the share out-of-app.
 - **Read-only mode** — a settings toggle that hides import/edit/new-folder, so
-  shop-floor viewers can't accidentally change a shared library.
+  viewers can't accidentally change a shared library.
 - **Auto-refresh** — when someone adds a module to the folder/share, the library
   updates without a restart.
 - **Editable metadata** — rename a module or retag it in-app; saved as overrides,
