@@ -1,7 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.0] — 2026-08-01
 ### Added
+- **Folder drill-down in the library.** Browsing a folder (or the library root) now
+  shows its subfolders as clickable **folder cards** and lists only the modules
+  directly in that folder — a file-explorer feel. A separate **All modules** entry
+  keeps the flat, search-everything view; the breadcrumb walks Library ▸ folder ▸ sub.
+- **Richer Home page.** At-a-glance stats (modules, folders, total versions, theme),
+  quick actions (open library / import / generators / open folder), **Jump into a
+  folder** cards, and a **Recently updated** strip — a launchpad instead of a near-
+  empty page.
 - **Search inside modules** (Settings → *Search inside modules*, off by default): the
   library search also matches text *inside* each module — find a serial, date, or
   value that appears anywhere in a file, not just in its title/tags. A small content

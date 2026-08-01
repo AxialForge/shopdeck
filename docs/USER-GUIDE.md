@@ -33,15 +33,20 @@ and **About**.
 
 ![The library: a folder tree and tag filters on the left, a card grid with previews and version badges, and the search/sort toolbar up top.](img/library.png)
 
-- **Folder tree** (left) — mirrors the folders under your library root. Click a
-  folder to show its modules (and everything nested under it). Click **All** to
-  show the whole library. The **breadcrumb** above the grid shows where you are.
+- **Folder tree** (left) — mirrors the folders under your library root. **All
+  modules** shows the whole library as one flat, searchable grid. Clicking a
+  folder (or **Library** for the root) *browses* it: you see its subfolders as
+  **folder cards** and the modules that live directly in it — a file-explorer
+  drill-down. Click a folder card (or a tree entry) to go deeper; the
+  **breadcrumb** walks Library ▸ folder ▸ subfolder back out.
 - **Cards** (center) — one per module: title/part number, type, a **version
   badge**, a preview, a size figure, its tags, and **Edit** / **Source** actions.
 - **Tags** (left, below folders) — click to filter; click again to clear. Combine
   with the folder selection and search.
 - **Toolbar** — search box, sort (**Updated / Name / Swaps**), **New folder**, and
   **Import**.
+
+![Browsing a folder: subfolders appear as folder cards and only the modules directly in that folder are listed, with a breadcrumb to walk back out.](img/folders.png)
 
 ## Opening a module
 
