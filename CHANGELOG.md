@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.5.1] — 2026-08-01
+### Changed
+- Updated the application icon.
+
 ## [1.5.0] — 2026-08-01
 ### Added
 - **Folder drill-down in the library.** Browsing a folder (or the library root) now
